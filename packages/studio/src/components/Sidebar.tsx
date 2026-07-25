@@ -97,6 +97,7 @@ interface Nav {
   toRadar: () => void;
   toDoctor: () => void;
   toFilmStudio: (id: string) => void;
+  toShort: (storyId: string) => void;
 }
 
 export function Sidebar({ nav, activePage, sse, t }: {
@@ -462,11 +463,13 @@ export function Sidebar({ nav, activePage, sse, t }: {
           <Collapse open={shortsExpanded}>
             <div className="space-y-0.5 pt-1">
               {shorts.map((short) => (
-                <div
+                <button
                   key={short.storyId}
+                  type="button"
                   data-testid={`short-${short.storyId}`}
-                  className="group/short w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-left transition-colors"
-                  title={tr(`点击查看《${short.title}》`, `View ${short.title}`)}
+                  onClick={() => nav.toShort(short.storyId)}
+                  className="group/short w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-left hover:bg-secondary/30 transition-colors"
+                  title={tr(`查看《${short.title}》`, `View ${short.title}`)}
                 >
                   <ScrollText size={14} className="shrink-0 text-muted-foreground/70" />
                   <span className="truncate flex-1 text-[15px] text-foreground">{short.title}</span>
@@ -478,7 +481,7 @@ export function Sidebar({ nav, activePage, sse, t }: {
                   {short.chapterCount != null && (
                     <span className="shrink-0 text-[11px] text-muted-foreground/50">{short.chapterCount}{tr("章", "ch")}</span>
                   )}
-                </div>
+                </button>
               ))}
               {shorts.length === 0 && (
                 <div className="px-3 py-6 text-xs text-muted-foreground/50 italic text-center">

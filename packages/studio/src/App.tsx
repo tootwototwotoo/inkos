@@ -6,6 +6,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { ChatPage } from "./pages/ChatPage";
 import { BookDetail } from "./pages/BookDetail";
 import { ChapterReader } from "./pages/ChapterReader";
+import { ShortReader } from "./pages/ShortReader";
 import { Analytics } from "./pages/Analytics";
 import { ServiceListPage } from "./pages/ServiceListPage";
 import { ServiceDetailPage } from "./pages/ServiceDetailPage";
@@ -115,6 +116,7 @@ export function App() {
     toFlow: (projectId: string) => setRoute({ page: "flow", projectId }),
     toFilmAuthor: (projectId: string) => setRoute({ page: "film-author", projectId }),
     toFilmStudio: (projectId: string) => setRoute({ page: "film-studio", projectId }),
+    toShort: (storyId: string) => setRoute({ page: "short", storyId }),
   };
 
   const activeBookId = deriveActiveBookId(route);
@@ -346,6 +348,11 @@ export function App() {
           {route.page === "play" && (
             <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
               <StoryPlayer projectId={route.projectId} nav={nav} theme={theme} t={t} />
+            </div>
+          )}
+          {route.page === "short" && (
+            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
+              <ShortReader storyId={route.storyId} nav={nav} theme={theme} t={t} />
             </div>
           )}
           {route.page === "film" && (
