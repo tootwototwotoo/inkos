@@ -2859,6 +2859,13 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     return c.json({ books });
   });
 
+  // --- Shorts (独立短篇,落盘于 shorts/<storyId>/final/) ---
+
+  app.get("/api/v1/shorts", async (c) => {
+    const shorts = await state.listShorts();
+    return c.json({ shorts });
+  });
+
   app.get("/api/v1/books/:id", async (c) => {
     const id = c.req.param("id");
     try {

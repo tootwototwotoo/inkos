@@ -548,7 +548,7 @@ export { runScriptCreation, runStoryboardCreation, runInteractiveFilmCreation, c
 export { ScriptCreationAgent, StoryboardCreationAgent, InteractiveFilmCreationAgent, renderScriptSpec, renderStoryboardSpec, renderInteractiveFilmSpec, type ScriptCreationInput, type ScriptTargetFormat, type StoryboardCreationInput, type InteractiveFilmCreationInput } from "./agents/script-storyboard.js";
 
 // State
-export { BookWriteLockError, StateManager } from "./state/manager.js";
+export { BookWriteLockError, StateManager, type ShortSummary } from "./state/manager.js";
 export { syncChapterWordCounts, type ChapterWordCountChange, type ChapterWordSyncDeps, type ChapterWordSyncResult } from "./state/chapter-word-sync.js";
 export { deleteLatestChapter, type ChapterDeleteDeps, type DeleteLatestChapterOptions, type DeleteLatestChapterResult } from "./state/chapter-delete.js";
 export { bootstrapStructuredStateFromMarkdown } from "./state/state-bootstrap.js";

@@ -8,6 +8,7 @@ const strings = {
   "nav.newBook": { zh: "新建书籍", en: "New Book" },
   "nav.createSection": { zh: "开始创作", en: "Start Creating" },
   "nav.myBooks": { zh: "我的创作", en: "My Works" },
+  "nav.myShorts": { zh: "我的短篇", en: "My Shorts" },
   "nav.createNovel": { zh: "长篇小说", en: "Long Novel" },
   "nav.createShort": { zh: "短篇小说", en: "Short Story" },
   "nav.createScript": { zh: "剧本创作", en: "Script" },

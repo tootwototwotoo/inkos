@@ -23,6 +23,16 @@ interface ProcessBookLock {
   heartbeatTask?: Promise<void>;
 }
 
+/** shorts/ 下单个短篇的摘要信息,供 Studio 侧栏列表展示。 */
+export interface ShortSummary {
+  readonly storyId: string;
+  readonly title: string;
+  readonly chapterCount: number | null;
+  readonly language: string | null;
+  readonly hasCover: boolean;
+  readonly createdAt: number | null;
+}
+
 // Studio creates a PipelineRunner per request. Lock ownership therefore has to
 // be shared by every StateManager in this process, not stored on one instance.
 const processBookLocks = new Map<string, ProcessBookLock>();
@@ -371,6 +381,10 @@ export class StateManager {
     return join(this.projectRoot, "books");
   }
 
+  get shortsDir(): string {
+    return join(this.projectRoot, "shorts");
+  }
+
   bookDir(bookId: string): string {
     return join(this.booksDir, bookId);
   }
@@ -436,6 +450,87 @@ export class StateManager {
     } catch {
       return [];
     }
+  }
+
+  /**
+   * 列出 shorts/ 下已完成的短篇。完成标志为 final/full.md 存在。
+   * 尽量从 final/short-story.json 读取标题与章节数；缺失时回退到目录名。
+   */
+  async listShorts(): Promise<ReadonlyArray<ShortSummary>> {
+    try {
+      const entries = await readdir(this.shortsDir, { withFileTypes: true });
+      const shorts: ShortSummary[] = [];
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const storyId = entry.name;
+        const fullMdPath = join(this.shortsDir, storyId, "final", "full.md");
+        try {
+          await stat(fullMdPath);
+        } catch {
+          // 未完成或不完整的短篇目录,跳过
+          continue;
+        }
+        const meta = await this.readShortMeta(storyId);
+        shorts.push({
+          storyId,
+          title: meta.title ?? storyId,
+          chapterCount: meta.chapterCount,
+          language: meta.language,
+          hasCover: meta.hasCover,
+          createdAt: meta.createdAt,
+        });
+      }
+      // 按 createdAt 倒序(新的在前),无时间戳的排后面
+      shorts.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+      return shorts;
+    } catch {
+      return [];
+    }
+  }
+
+  private async readShortMeta(
+    storyId: string,
+  ): Promise<{ title: string | null; chapterCount: number | null; language: string | null; hasCover: boolean; createdAt: number | null }> {
+    const baseDir = join(this.shortsDir, storyId);
+    const jsonPath = join(baseDir, "final", "short-story.json");
+    let title: string | null = null;
+    let chapterCount: number | null = null;
+    let language: string | null = null;
+    try {
+      const raw = await readFile(jsonPath, "utf-8");
+      const parsed = JSON.parse(raw) as { storyTitle?: unknown; chapters?: unknown; language?: unknown };
+      if (typeof parsed.storyTitle === "string" && parsed.storyTitle.trim()) {
+        title = parsed.storyTitle.trim();
+      }
+      if (Array.isArray(parsed.chapters)) {
+        chapterCount = parsed.chapters.length;
+      }
+      if (typeof parsed.language === "string") {
+        language = parsed.language;
+      }
+    } catch {
+      // short-story.json 缺失或解析失败,回退到目录名
+    }
+    // 封面图:优先 cover.png,其次 final/cover.png
+    let hasCover = false;
+    for (const candidate of ["cover.png", "final/cover.png"]) {
+      try {
+        await stat(join(baseDir, candidate));
+        hasCover = true;
+        break;
+      } catch {
+        // 继续尝试下一个候选
+      }
+    }
+    // createdAt:用 full.md 的 mtime 作为近似创建时间
+    let createdAt: number | null = null;
+    try {
+      const st = await stat(join(baseDir, "final", "full.md"));
+      createdAt = st.mtimeMs;
+    } catch {
+      // 忽略
+    }
+    return { title, chapterCount, language, hasCover, createdAt };
   }
 
   async getNextChapterNumber(bookId: string): Promise<number> {

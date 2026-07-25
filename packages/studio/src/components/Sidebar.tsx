@@ -72,6 +72,15 @@ interface BookSummary {
   readonly chaptersWritten: number;
 }
 
+interface ShortSummary {
+  readonly storyId: string;
+  readonly title: string;
+  readonly chapterCount: number | null;
+  readonly language: string | null;
+  readonly hasCover: boolean;
+  readonly createdAt: number | null;
+}
+
 interface Nav {
   toDashboard: () => void;
   toChat: () => void;
@@ -98,6 +107,7 @@ export function Sidebar({ nav, activePage, sse, t }: {
 }) {
   const { data, refetch: refetchBooks, mutate: mutateBooks } = useApi<{ books: ReadonlyArray<BookSummary> }>("/books");
   const { data: filmsData, refetch: refetchFilms } = useApi<{ films: ReadonlyArray<{ projectId: string; title: string }> }>("/interactive-films");
+  const { data: shortsData, refetch: refetchShorts } = useApi<{ shorts: ReadonlyArray<ShortSummary> }>("/shorts");
   const { data: daemon, refetch: refetchDaemon } = useApi<{ running: boolean }>("/daemon");
   const sessions = useChatStore((s) => s.sessions);
   const sessionIdsByBook = useChatStore((s) => s.sessionIdsByBook);
@@ -116,10 +126,12 @@ export function Sidebar({ nav, activePage, sse, t }: {
   const [expandedBooks, setExpandedBooks] = useState<Set<string>>(new Set());
   const [projectChatExpanded, setProjectChatExpanded] = useState(true);
   const [myBooksExpanded, setMyBooksExpanded] = useState(true);
+  const [shortsExpanded, setShortsExpanded] = useState(true);
   const [filmsExpanded, setFilmsExpanded] = useState(true);
 
   const books = data?.books ?? [];
   const films = filmsData?.films ?? [];
+  const shorts = shortsData?.shorts ?? [];
   const projectChatKey = "__null__";
   const projectChatSessions = useMemo(
     () =>
@@ -171,6 +183,12 @@ export function Sidebar({ nav, activePage, sse, t }: {
   useEffect(() => {
     void refetchFilms();
   }, [bookDataVersion, refetchFilms]);
+
+  // 短篇生成完成(工具结果 short_fiction_created)会推动 bookDataVersion,
+  // 与 films 一致在此刷新短篇列表。
+  useEffect(() => {
+    void refetchShorts();
+  }, [bookDataVersion, refetchShorts]);
 
   useEffect(() => {
     if (activePage === "chat") {
@@ -435,6 +453,39 @@ export function Sidebar({ nav, activePage, sse, t }: {
               </div>
             )}
           </div>
+          </Collapse>
+        </div>
+
+        {/* 我的短篇 Section */}
+        <div data-testid="shorts-section">
+          <SectionHeader label={t("nav.myShorts")} expanded={shortsExpanded} onToggle={() => setShortsExpanded((v) => !v)} />
+          <Collapse open={shortsExpanded}>
+            <div className="space-y-0.5 pt-1">
+              {shorts.map((short) => (
+                <div
+                  key={short.storyId}
+                  data-testid={`short-${short.storyId}`}
+                  className="group/short w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-left transition-colors"
+                  title={tr(`点击查看《${short.title}》`, `View ${short.title}`)}
+                >
+                  <ScrollText size={14} className="shrink-0 text-muted-foreground/70" />
+                  <span className="truncate flex-1 text-[15px] text-foreground">{short.title}</span>
+                  {short.hasCover && (
+                    <span className="shrink-0 text-muted-foreground/50" title={tr("已生成封面", "Cover generated")}>
+                      <BookCopy size={12} />
+                    </span>
+                  )}
+                  {short.chapterCount != null && (
+                    <span className="shrink-0 text-[11px] text-muted-foreground/50">{short.chapterCount}{tr("章", "ch")}</span>
+                  )}
+                </div>
+              ))}
+              {shorts.length === 0 && (
+                <div className="px-3 py-6 text-xs text-muted-foreground/50 italic text-center">
+                  {tr("还没有短篇作品", "No short fiction yet")}
+                </div>
+              )}
+            </div>
           </Collapse>
         </div>
 
