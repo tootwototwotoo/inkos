@@ -630,6 +630,8 @@ export interface ShortFictionCoverRequest {
   readonly api: CoverProviderPreset["api"];
   readonly baseUrl: string;
   readonly endpoint?: string;
+  /** images API 路径,仅 api==="images" 时使用。默认 /images/generations(OpenRouter 用 /images)。 */
+  readonly imagesPath?: string;
   readonly model: string;
   readonly apiKey: string;
 }
@@ -672,6 +674,7 @@ export async function resolveCoverGenerationRequest(input: {
   return {
     api: preset.api,
     baseUrl: preset.baseUrl,
+    imagesPath: preset.imagesPath,
     model: input.coverModel || projectCover.model || preset.defaultModel,
     apiKey,
   };
@@ -708,7 +711,8 @@ async function generateImagesCover(
   size: string,
   signal?: AbortSignal,
 ): Promise<{ readonly buffer: Buffer; readonly extension: "png" | "jpg" }> {
-  const endpoint = request.endpoint ?? `${request.baseUrl.replace(/\/+$/u, "")}/images/generations`;
+  const imagePath = request.imagesPath ?? "/images/generations";
+  const endpoint = request.endpoint ?? `${request.baseUrl.replace(/\/+$/u, "")}${imagePath}`;
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {

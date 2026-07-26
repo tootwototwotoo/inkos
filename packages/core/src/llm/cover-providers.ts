@@ -1,10 +1,15 @@
-export type CoverProviderId = "kkaiapi" | "openai" | "google";
+export type CoverProviderId = "kkaiapi" | "openai" | "google" | "openrouter";
 
 export interface CoverProviderPreset {
   readonly service: CoverProviderId;
   readonly label: string;
   readonly baseUrl: string;
   readonly api: "responses" | "images" | "gemini";
+  /**
+   * images API 的路径,仅 api==="images" 时使用。
+   * OpenAI 用 /images/generations;OpenRouter 用专属的 /images。默认 /images/generations。
+   */
+  readonly imagesPath?: string;
   readonly defaultModel: string;
   readonly models: readonly string[];
 }
@@ -33,6 +38,19 @@ export const COVER_PROVIDER_PRESETS: readonly CoverProviderPreset[] = [
     api: "gemini",
     defaultModel: "gemini-3.1-flash-image-preview",
     models: ["gemini-3.1-flash-image-preview", "gemini-2.5-flash-image"],
+  },
+  {
+    service: "openrouter",
+    label: "OpenRouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    api: "images",
+    imagesPath: "/images",
+    defaultModel: "google/gemini-2.5-flash-image",
+    models: [
+      "google/gemini-2.5-flash-image",
+      "google/gemini-3.1-flash-image-preview",
+      "google/gemini-3-pro-image-preview",
+    ],
   },
 ];
 
