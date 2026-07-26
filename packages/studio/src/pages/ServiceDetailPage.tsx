@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { fetchJson } from "../hooks/use-api";
 import { useServiceStore } from "../store/service";
-import { Eye, EyeOff, Loader2, ArrowLeft, Trash2 } from "lucide-react";
+import { Eye, EyeOff, Loader2, ArrowLeft, Trash2, X, Plus, RotateCcw, Pencil, Check } from "lucide-react";
 import { ServiceQuickLinks } from "../components/ServiceQuickLinks";
 import { tr } from "../lib/app-language";
 import {
@@ -9,11 +9,13 @@ import {
   matchServiceConfigEntryForDetail,
   probeServiceForDetail,
   rehydrateServiceConnectionStatus,
+  saveModelOverrides,
   saveServiceConfig,
   type ServiceDetailConnectionStatus as ConnectionStatus,
   type ServiceDetailDetectedConfig as DetectedConfig,
   type ServiceDetailModelInfo as ModelInfo,
   type ServiceDetailVerifiedProbe as VerifiedProbe,
+  type ServiceModelOverridesPayload,
 } from "./service-detail-state";
 
 interface Nav {
@@ -27,6 +29,272 @@ function DetailSkeleton() {
       <div className="h-7 w-40 bg-muted rounded" />
       <div className="space-y-2"><div className="h-3 w-16 bg-muted/60 rounded" /><div className="h-10 w-full bg-muted/40 rounded-lg" /></div>
       <div className="h-9 w-24 bg-muted/40 rounded-lg" />
+    </div>
+  );
+}
+
+interface EditableModel extends ModelInfo {
+  readonly source?: "probed" | "extra";
+}
+
+/**
+ * 可编辑的模型列表:每个模型可删除(×)和改名(铅笔),底部可添加自定义模型,
+ * 顶部有"重置"按钮清除所有覆盖层。编辑后调 saveModelOverrides 持久化,
+ * 保存成功后 onRefresh 触发父组件重新拉取应用了覆盖层的列表。
+ */
+function EditableModelList({
+  serviceId,
+  models,
+  onRefresh,
+}: {
+  readonly serviceId: string;
+  readonly models: ReadonlyArray<ModelInfo>;
+  readonly onRefresh: () => void;
+}) {
+  const [disabled, setDisabled] = useState<ReadonlyArray<string>>([]);
+  const [extra, setExtra] = useState<ReadonlyArray<{ id: string; name?: string }>>([]);
+  const [labels, setLabels] = useState<Record<string, string>>({});
+  const [addInput, setAddInput] = useState("");
+  const [addName, setAddName] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingLabel, setEditingLabel] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+
+  // 加载已保存的覆盖层(从 GET /services/:service/models 之外,需要单独读)。
+  // 这里复用 saveServiceConfig 用的 /services/config 拿到 services 数组,
+  // 从中找到该 service 的 models 字段。
+  useEffect(() => {
+    let cancelled = false;
+    void fetchJson<{ services: Array<Record<string, unknown>> }>("/services/config")
+      .then((data) => {
+        if (cancelled) return;
+        const matched = (data.services ?? []).find((s) => {
+          const sid = typeof s.service === "string" ? s.service : "";
+          const name = typeof s.name === "string" ? s.name : "";
+          const key = sid === "custom" ? `custom:${name || "Custom"}` : sid;
+          return key === serviceId || sid === serviceId;
+        });
+        if (!matched || !matched.models || typeof matched.models !== "object") return;
+        const m = matched.models as Record<string, unknown>;
+        if (Array.isArray(m.disabled)) {
+          setDisabled(m.disabled.filter((s): s is string => typeof s === "string"));
+        }
+        if (Array.isArray(m.extra)) {
+          setExtra(m.extra
+            .filter((e): e is Record<string, unknown> => Boolean(e) && typeof e === "object" && typeof (e as { id?: unknown }).id === "string")
+            .map((e) => {
+              const obj = e as { id: string; name?: unknown };
+              return typeof obj.name === "string" ? { id: obj.id, name: obj.name } : { id: obj.id };
+            }));
+        }
+        if (m.labels && typeof m.labels === "object") {
+          setLabels(Object.fromEntries(
+            Object.entries(m.labels as Record<string, unknown>)
+              .filter(([, v]) => typeof v === "string"),
+          ) as Record<string, string>);
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) {} });
+    return () => { cancelled = true; };
+  }, [serviceId]);
+
+  // 当前展示的列表:基础 models + extra,减去 disabled,应用 labels。
+  const displayed: ReadonlyArray<EditableModel> = [
+    ...models.map((m) => ({ ...m, source: "probed" as const })),
+    ...extra
+      .filter((e) => !models.some((m) => m.id === e.id))
+      .map((e) => ({ id: e.id, name: labels[e.id] ?? e.name ?? e.id, source: "extra" as const })),
+  ].filter((m) => !disabled.includes(m.id));
+
+  const persist = async (next: ServiceModelOverridesPayload) => {
+    setSaving(true);
+    try {
+      await saveModelOverrides(serviceId, next);
+      onRefresh();
+    } catch (err) {
+      alert(tr("保存失败：", "Save failed: ") + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = (id: string) => {
+    const nextDisabled = disabled.includes(id) ? disabled : [...disabled, id];
+    setDisabled(nextDisabled);
+    void persist({ disabled: nextDisabled, extra, labels });
+  };
+
+  const handleAdd = () => {
+    const id = addInput.trim();
+    if (!id) return;
+    if (models.some((m) => m.id === id) || extra.some((e) => e.id === id)) {
+      alert(tr("该模型已存在", "Model already exists"));
+      return;
+    }
+    const name = addName.trim() || undefined;
+    const nextExtra = [...extra, name ? { id, name } : { id }];
+    setExtra(nextExtra);
+    setAddInput("");
+    setAddName("");
+    setShowAdd(false);
+    void persist({ disabled, extra: nextExtra, labels });
+  };
+
+  const handleStartEdit = (id: string, currentName: string) => {
+    setEditingId(id);
+    setEditingLabel(currentName);
+  };
+
+  const handleSaveEdit = (id: string) => {
+    const trimmed = editingLabel.trim();
+    const nextLabels = { ...labels };
+    if (trimmed && trimmed !== id) {
+      nextLabels[id] = trimmed;
+    } else {
+      delete nextLabels[id];
+    }
+    setLabels(nextLabels);
+    setEditingId(null);
+    void persist({ disabled, extra, labels: nextLabels });
+  };
+
+  const handleReset = () => {
+    setDisabled([]);
+    setExtra([]);
+    setLabels({});
+    void persist({});
+  };
+
+  const hasOverrides = disabled.length > 0 || extra.length > 0 || Object.keys(labels).length > 0;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground/70 font-medium uppercase tracking-wider">
+          {tr(`可用模型（${displayed.length}）`, `Available models (${displayed.length})`)}
+        </p>
+        <div className="flex items-center gap-2">
+          {hasOverrides && (
+            <button
+              type="button"
+              onClick={handleReset}
+              disabled={saving}
+              className="flex items-center gap-1 text-[11px] text-muted-foreground/60 hover:text-foreground transition-colors"
+              title={tr("清除所有编辑，恢复原始列表", "Clear all edits, restore original list")}
+            >
+              <RotateCcw size={11} />
+              {tr("重置", "Reset")}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowAdd((v) => !v)}
+            disabled={saving}
+            className="flex items-center gap-1 text-[11px] text-muted-foreground/60 hover:text-foreground transition-colors"
+          >
+            <Plus size={11} />
+            {tr("添加", "Add")}
+          </button>
+        </div>
+      </div>
+
+      {displayed.length > 0 ? (
+        <div className="flex gap-1.5 flex-wrap">
+          {displayed.map((m) => (
+            <div
+              key={m.id}
+              className="group flex items-center gap-1 text-[11px] px-2.5 py-1 pr-1.5 rounded-md bg-emerald-500/[0.06] text-emerald-600 dark:text-emerald-400 border border-emerald-500/15"
+            >
+              {editingId === m.id ? (
+                <>
+                  <input
+                    autoFocus
+                    value={editingLabel}
+                    onChange={(e) => setEditingLabel(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSaveEdit(m.id);
+                      if (e.key === "Escape") setEditingId(null);
+                    }}
+                    className="bg-transparent border-b border-emerald-500/30 outline-none w-28 text-[11px]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleSaveEdit(m.id)}
+                    className="hover:text-foreground"
+                  >
+                    <Check size={11} />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span
+                    onDoubleClick={() => handleStartEdit(m.id, m.name ?? m.id)}
+                    title={m.id === (m.name ?? m.id) ? tr("双击改名", "Double-click to rename") : m.id}
+                  >
+                    {m.name ?? m.id}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleStartEdit(m.id, m.name ?? m.id)}
+                    className="opacity-0 group-hover:opacity-100 hover:text-foreground transition-opacity"
+                    title={tr("改名", "Rename")}
+                  >
+                    <Pencil size={10} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(m.id)}
+                    disabled={saving}
+                    className="opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
+                    title={tr("移除", "Remove")}
+                  >
+                    <X size={12} />
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground/60">{tr("点击“测试连接”查看可用模型", "Click “Test connection” to list available models")}</p>
+      )}
+
+      {showAdd && (
+        <div className="flex flex-wrap items-center gap-2 p-2 rounded-md bg-muted/30 border border-border/30">
+          <input
+            value={addInput}
+            onChange={(e) => setAddInput(e.target.value)}
+            placeholder={tr("模型 ID（如 gpt-4o）", "Model ID (e.g. gpt-4o)")}
+            onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+            className="flex-1 min-w-[160px] bg-background text-xs px-2 py-1 rounded border border-border/40 outline-none focus:border-primary/40"
+          />
+          <input
+            value={addName}
+            onChange={(e) => setAddName(e.target.value)}
+            placeholder={tr("显示名（可选）", "Display name (optional)")}
+            onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+            className="flex-1 min-w-[120px] bg-background text-xs px-2 py-1 rounded border border-border/40 outline-none focus:border-primary/40"
+          />
+          <button
+            type="button"
+            onClick={handleAdd}
+            disabled={saving || !addInput.trim()}
+            className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-40"
+          >
+            {saving ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />}
+            {tr("添加", "Add")}
+          </button>
+        </div>
+      )}
+
+      {saving && (
+        <p className="text-[11px] text-muted-foreground/50 flex items-center gap-1">
+          <Loader2 size={11} className="animate-spin" />
+          {tr("保存中…", "Saving…")}
+        </p>
+      )}
     </div>
   );
 }
@@ -128,6 +396,21 @@ export function ServiceDetailPage({ serviceId, nav }: { serviceId: string; nav: 
   const isBusy = status.state === "testing" || status.state === "saving";
 
   // -- Handlers --
+
+  // 保存模型覆盖层后,重新拉取应用了覆盖层的模型列表(?refresh=1 绕过缓存)。
+  const handleRefreshModels = async () => {
+    try {
+      const data = await fetchJson<{ models: ModelInfo[] }>(
+        `/services/${encodeURIComponent(effectiveServiceId)}/models?refresh=1`,
+      );
+      const refreshed = data.models ?? [];
+      setStoreModels(effectiveServiceId, refreshed);
+      setStatus((prev) => prev.state === "connected" ? { state: "connected", models: refreshed } : prev);
+    } catch {
+      // 刷新失败不影响已保存的覆盖层,静默忽略
+    }
+  };
+
   const handleTest = async () => {
     const trimmedKey = apiKey.trim();
     if (!trimmedKey && !isCustom) {
@@ -348,24 +631,13 @@ export function ServiceDetailPage({ serviceId, nav }: { serviceId: string; nav: 
           </Field>
         </div>
 
-        {/* Models */}
+        {/* Models (editable: add / remove / rename / reset) */}
         {isConnected && (
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground/70 font-medium uppercase tracking-wider">
-              {tr(`可用模型（${models.length}）`, `Available models (${models.length})`)}
-            </p>
-            {models.length > 0 ? (
-              <div className="flex gap-1.5 flex-wrap">
-                {models.map((m) => (
-                  <span key={m.id} className="text-[11px] px-2.5 py-1 rounded-md bg-emerald-500/[0.06] text-emerald-600 dark:text-emerald-400 border border-emerald-500/15">
-                    {m.name ?? m.id}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground/60">{tr("点击“测试连接”查看可用模型", "Click “Test connection” to list available models")}</p>
-            )}
-          </div>
+          <EditableModelList
+            serviceId={effectiveServiceId}
+            models={models}
+            onRefresh={handleRefreshModels}
+          />
         )}
 
         {/* Advanced params */}

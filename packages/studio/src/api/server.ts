@@ -1733,6 +1733,12 @@ const bookCreateStatus = new Map<string, { status: "creating" | "error"; error?:
 // 内存缓存：service -> 模型列表 + 更新时间戳；避免每次 sidebar 挂载时都打真实 LLM /models
 const modelListCache = new Map<string, { models: Array<{ id: string; name: string }>; at: number }>();
 
+interface ServiceModelOverrides {
+  readonly disabled?: ReadonlyArray<string>;
+  readonly extra?: ReadonlyArray<{ readonly id: string; readonly name?: string }>;
+  readonly labels?: Readonly<Record<string, string>>;
+}
+
 interface ServiceConfigEntry {
   service: string;
   name?: string;
@@ -1740,6 +1746,7 @@ interface ServiceConfigEntry {
   temperature?: number;
   apiFormat?: "chat" | "responses";
   stream?: boolean;
+  models?: ServiceModelOverrides;
 }
 
 type LLMConfigSource = "env" | "studio";
@@ -1847,7 +1854,32 @@ function serviceConfigKey(entry: ServiceConfigEntry): string {
   return entry.service === "custom" ? `custom:${entry.name ?? "Custom"}` : entry.service;
 }
 
+/** 在 services 数组里按 service id(custom:name 或 provider)找到条目索引。 */
+function findServiceEntryIndex(services: ServiceConfigEntry[], service: string): number {
+  return services.findIndex((s) => {
+    const key = serviceConfigKey(s);
+    return key === service || s.service === service;
+  });
+}
+
+/** 读取某 service 的用户模型覆盖层(从 inkos.json 的 llm.services 读)。 */
+async function loadServiceModelOverrides(projectRoot: string, service: string): Promise<ServiceModelOverrides | undefined> {
+  let config: Record<string, unknown>;
+  try {
+    config = await loadRawConfig(projectRoot);
+  } catch {
+    return undefined;
+  }
+  const llm = config.llm as Record<string, unknown> | undefined;
+  if (!llm?.services) return undefined;
+  const services = normalizeServiceConfig(llm.services);
+  const idx = findServiceEntryIndex(services, service);
+  if (idx === -1) return undefined;
+  return services[idx].models;
+}
+
 function normalizeServiceEntry(serviceId: string, value: Record<string, unknown>): ServiceConfigEntry {
+  const models = normalizeModelOverrides(value.models);
   if (serviceId.startsWith("custom:")) {
     return {
       service: "custom",
@@ -1856,6 +1888,7 @@ function normalizeServiceEntry(serviceId: string, value: Record<string, unknown>
       ...(typeof value.temperature === "number" ? { temperature: value.temperature } : {}),
       ...(value.apiFormat === "chat" || value.apiFormat === "responses" ? { apiFormat: value.apiFormat } : {}),
       ...(typeof value.stream === "boolean" ? { stream: value.stream } : {}),
+      ...(models ? { models } : {}),
     };
   }
 
@@ -1867,6 +1900,7 @@ function normalizeServiceEntry(serviceId: string, value: Record<string, unknown>
       ...(typeof value.temperature === "number" ? { temperature: value.temperature } : {}),
       ...(value.apiFormat === "chat" || value.apiFormat === "responses" ? { apiFormat: value.apiFormat } : {}),
       ...(typeof value.stream === "boolean" ? { stream: value.stream } : {}),
+      ...(models ? { models } : {}),
     };
   }
 
@@ -1875,11 +1909,40 @@ function normalizeServiceEntry(serviceId: string, value: Record<string, unknown>
     ...(typeof value.temperature === "number" ? { temperature: value.temperature } : {}),
     ...(value.apiFormat === "chat" || value.apiFormat === "responses" ? { apiFormat: value.apiFormat } : {}),
     ...(typeof value.stream === "boolean" ? { stream: value.stream } : {}),
+    ...(models ? { models } : {}),
   };
 }
 
 function normalizeConfigSource(value: unknown): LLMConfigSource {
   return value === "studio" ? "studio" : "env";
+}
+
+function normalizeModelOverrides(raw: unknown): ServiceModelOverrides | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const record = raw as Record<string, unknown>;
+  const disabled = Array.isArray(record.disabled)
+    ? record.disabled.filter((s): s is string => typeof s === "string" && s.length > 0)
+    : undefined;
+  const extra = Array.isArray(record.extra)
+    ? record.extra
+        .filter((e): e is Record<string, unknown> => Boolean(e) && typeof e === "object" && typeof (e as { id?: unknown }).id === "string" && (e as { id: string }).id.length > 0)
+        .map((e) => {
+          const obj = e as { id: string; name?: unknown };
+          return typeof obj.name === "string" && obj.name.length > 0 ? { id: obj.id, name: obj.name } : { id: obj.id };
+        })
+    : undefined;
+  const labels = record.labels && typeof record.labels === "object"
+    ? Object.fromEntries(
+        Object.entries(record.labels as Record<string, unknown>)
+          .filter(([, v]) => typeof v === "string" && v.length > 0),
+      ) as Record<string, string>
+    : undefined;
+  if (!disabled && !extra && !labels) return undefined;
+  return {
+    ...(disabled ? { disabled } : {}),
+    ...(extra ? { extra } : {}),
+    ...(labels ? { labels } : {}),
+  };
 }
 
 function normalizeServiceConfig(raw: unknown): ServiceConfigEntry[] {
@@ -1893,6 +1956,7 @@ function normalizeServiceConfig(raw: unknown): ServiceConfigEntry[] {
         ...(typeof entry.temperature === "number" ? { temperature: entry.temperature } : {}),
         ...(entry.apiFormat === "chat" || entry.apiFormat === "responses" ? { apiFormat: entry.apiFormat } : {}),
         ...(typeof entry.stream === "boolean" ? { stream: entry.stream } : {}),
+        ...(normalizeModelOverrides(entry.models) ? { models: normalizeModelOverrides(entry.models)! } : {}),
       }));
   }
 
@@ -3799,10 +3863,14 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     }
 
     // B13: 走 listModelsForService 走 live probe + bank 交叉，返回带元数据的 models
+    // 应用该 service 的用户模型覆盖层(增删改),覆盖层持久化在 inkos.json 的
+    // llm.services[<service>].models,重新 probe 不会丢失。
+    const overrides = await loadServiceModelOverrides(root, service);
     const enriched = await listModelsForService(
       isCustomServiceId(service) ? "custom" : service,
       apiKey,
       isCustomServiceId(service) ? resolvedBaseUrl ?? undefined : undefined,
+      overrides,
     );
     const models = filterTextChatModels(enriched).map((m) => ({
       id: m.id,
@@ -3812,6 +3880,40 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     }));
     modelListCache.set(cacheKey, { models, at: Date.now() });
     return c.json({ models });
+  });
+
+  // 保存某 service 的模型覆盖层(disabled/extra/labels),持久化到 inkos.json。
+  app.put("/api/v1/services/:service/models", async (c) => {
+    const service = c.req.param("service");
+    const body = await c.req.json<unknown>();
+    const overrides = normalizeModelOverrides(body) ?? undefined;
+    const config = await loadRawConfig(root);
+    const llm = (config.llm as Record<string, unknown> | undefined) ?? {};
+    const services = normalizeServiceConfig(llm.services);
+    const idx = findServiceEntryIndex(services, service);
+    if (idx === -1) {
+      return c.json({ error: `Service "${service}" not found` }, 404);
+    }
+    if (overrides) {
+      services[idx] = { ...services[idx], models: overrides };
+    } else {
+      // 传入空对象 = 清除覆盖层(重置)
+      const { models: _drop, ...rest } = services[idx];
+      void _drop;
+      services[idx] = rest;
+    }
+    llm.services = services;
+    config.llm = llm;
+    syncTopLevelLlmMirror(llm);
+    await saveRawConfig(root, config);
+
+    // 清掉该 service 的 modelListCache,让下次 GET 重新合并(含新覆盖层)。
+    for (const key of [...modelListCache.keys()]) {
+      if (key.startsWith(`${service}::`)) {
+        modelListCache.delete(key);
+      }
+    }
+    return c.json({ ok: true, models: overrides });
   });
 
   // --- Project info ---

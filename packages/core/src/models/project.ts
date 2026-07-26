@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+/** per-service 模型列表覆盖层:在 probe+bank 基础列表上做增删改。 */
+export const ServiceModelOverridesSchema = z.object({
+  disabled: z.array(z.string()).optional(),
+  extra: z.array(z.object({ id: z.string().min(1), name: z.string().optional() })).optional(),
+  labels: z.record(z.string()).optional(),
+});
+
+export type ServiceModelOverrides = z.infer<typeof ServiceModelOverridesSchema>;
+
 // C1 (v2.0.0 breaking): `maxTokens` 字段已被 providers bank 接管；zod 用 strip mode 静默丢弃老配置里的 `maxTokens`。
 const LLMServiceEntrySchema = z.object({
   service: z.string().min(1),
@@ -8,6 +17,7 @@ const LLMServiceEntrySchema = z.object({
   temperature: z.number().min(0).max(2).optional(),
   apiFormat: z.enum(["chat", "responses"]).optional(),
   stream: z.boolean().optional(),
+  models: ServiceModelOverridesSchema.optional(),
 });
 
 const LLMCoverConfigSchema = z.object({

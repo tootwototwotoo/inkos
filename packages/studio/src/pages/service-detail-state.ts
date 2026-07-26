@@ -232,3 +232,23 @@ export async function deleteServiceConfig(
     method: "DELETE",
   });
 }
+
+export interface ServiceModelOverridesPayload {
+  readonly disabled?: ReadonlyArray<string>;
+  readonly extra?: ReadonlyArray<{ readonly id: string; readonly name?: string }>;
+  readonly labels?: Readonly<Record<string, string>>;
+}
+
+/** 保存某 service 的模型覆盖层(增删改),持久化到 inkos.json。 */
+export async function saveModelOverrides(
+  serviceId: string,
+  overrides: ServiceModelOverridesPayload,
+  deps?: { readonly fetchJsonImpl?: JsonFetcher },
+): Promise<void> {
+  const fetchJsonImpl = deps?.fetchJsonImpl ?? fetchJson;
+  await fetchJsonImpl(`/services/${encodeURIComponent(serviceId)}/models`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(overrides),
+  });
+}

@@ -160,6 +160,7 @@ export async function listModelsForService(
   service: string,
   apiKey?: string,
   liveBaseUrl?: string,
+  overrides?: { readonly disabled?: ReadonlyArray<string>; readonly extra?: ReadonlyArray<{ readonly id: string; readonly name?: string }>; readonly labels?: Readonly<Record<string, string>> },
 ): Promise<ReadonlyArray<ModelInfo>> {
   const provider = getEndpoint(service);
   const preset = SERVICE_PRESETS[service];
@@ -195,6 +196,32 @@ export async function listModelsForService(
   if (byId.size === 0 && preset?.knownModels) {
     for (const id of preset.knownModels) {
       byId.set(id, { id, name: id, contextWindow: 0 });
+    }
+  }
+
+  // 4) 应用用户覆盖层:先加 extra,再删 disabled,再应用 labels。
+  //    覆盖层是叠加在 probe+bank 之上的持久化编辑,重新 probe 不会丢失。
+  if (overrides) {
+    if (overrides.extra) {
+      for (const m of overrides.extra) {
+        if (!byId.has(m.id)) {
+          byId.set(m.id, { id: m.id, name: m.name ?? m.id, contextWindow: 0 });
+        }
+      }
+    }
+    if (overrides.disabled) {
+      const disabledSet = new Set(overrides.disabled);
+      for (const id of disabledSet) {
+        byId.delete(id);
+      }
+    }
+    if (overrides.labels) {
+      for (const [id, label] of Object.entries(overrides.labels)) {
+        const existing = byId.get(id);
+        if (existing && label) {
+          byId.set(id, { ...existing, name: label });
+        }
+      }
     }
   }
 
