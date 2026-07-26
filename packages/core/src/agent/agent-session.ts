@@ -42,13 +42,14 @@ import {
   createRetrieveMaterialTool,
   createImportChaptersTool,
 } from "./agent-tools.js";
+import { createEditShortFileTool, createWriteShortFileTool } from "./short-edit-tools.js";
 import { createFilmAuthoringTools, filmLLMDepsFromClient } from "./film-authoring-tools.js";
 import {
   createNarrativeForecastCreateTool,
   createNarrativeForecastGetTool,
   createNarrativeForecastSelectTool,
 } from "./forecast-tools.js";
-import { createBookContextTransform } from "./context-transform.js";
+import { createBookContextTransform, createShortContextTransform } from "./context-transform.js";
 import {
   appendTranscriptEvents,
   readTranscriptEvents,
@@ -820,10 +821,24 @@ function createAgentToolsForMode(params: {
 
   if (params.sessionKind === "short") {
     if (isConfirmed("short_run")) {
-      return [createShortFictionRunTool(params.pipeline, params.projectRoot, { actionPayload: params.actionPayload, language: lang })];
+      return [createShortFictionRunTool(params.pipeline, params.projectRoot, { actionPayload: params.actionPayload, language: lang, sessionId: params.sessionId })];
     }
     if (isConfirmed("generate_cover")) {
       return [createGenerateCoverTool(params.projectRoot, { actionPayload: params.actionPayload })];
+    }
+    // 已绑定 storyId 的短篇继续编辑会话:给读取+编辑工具,让 AI 能改正文。
+    // 未绑定 storyId(bookId === null)时是首次生产前的澄清会话,只给 propose/material。
+    if (params.bookId) {
+      return [
+        createReadTool(params.projectRoot, { allowSystemPaths: params.allowSystemFileRead }),
+        createEditShortFileTool(params.projectRoot, params.bookId),
+        createWriteShortFileTool(params.projectRoot, params.bookId),
+        createGenerateCoverTool(params.projectRoot, { actionPayload: params.actionPayload }),
+        createGrepTool(params.projectRoot),
+        createLsTool(params.projectRoot),
+        materialTool,
+        materialRetrievalTool,
+      ];
     }
     return [proposalTool, materialTool, materialRetrievalTool];
   }
@@ -1092,7 +1107,9 @@ async function runAgentSessionUnlocked(
           : agentTools,
         messages: initialAgentMessages,
       },
-      transformContext: createBookContextTransform(bookId, projectRoot, { onContextCompression }),
+      transformContext: sessionKind === "short" && bookId
+        ? createShortContextTransform(bookId, projectRoot, { onContextCompression })
+        : createBookContextTransform(bookId, projectRoot, { onContextCompression }),
       convertToLlm: (messages) => {
         terminalToolResultTail = hasUnansweredTerminalToolResult(messages);
         return convertAgentMessagesForModel(messages, model);

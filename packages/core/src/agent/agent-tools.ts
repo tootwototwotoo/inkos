@@ -20,6 +20,7 @@ import { runResearchReport } from "../agents/researcher.js";
 import { ingestMaterial } from "../materials/ingest.js";
 import { retrieveMaterials } from "../materials/retrieve.js";
 import { loadChaptersFromPath } from "./chapter-import-source.js";
+import { migrateShortSession } from "../interaction/book-session-store.js";
 import type { ScriptTargetFormat } from "../agents/script-storyboard.js";
 import { createPlayDB, type PlayGraphDB } from "../play/play-db-factory.js";
 import { PlayRunner, type PlayOpeningSeedResult, type PlayReplayResult, type PlayStepResult, type PlayVariantRestoreResult } from "../play/play-runner.js";
@@ -1328,7 +1329,7 @@ function assertShortRunCharsPerChapter(
 export function createShortFictionRunTool(
   pipeline: PipelineRunner,
   projectRoot: string,
-  options: { readonly actionPayload?: ActionPayload; readonly language?: "zh" | "en" } = {},
+  options: { readonly actionPayload?: ActionPayload; readonly language?: "zh" | "en"; readonly sessionId?: string } = {},
 ): AgentTool<typeof ShortFictionRunParams> {
   return {
     name: "short_fiction_run",
@@ -1378,6 +1379,17 @@ export function createShortFictionRunTool(
           onProgress: progress,
         }),
       );
+
+      // 生产成功后,把当前 transient short 会话绑定到生成的 storyId,
+      // 使其成为"该短篇的继续编辑会话"(侧栏短篇区块展开后可见,后续对话拿到
+      // storyId 绑定的 read/edit 工具集)。绑定失败不阻塞返回结果。
+      if (options.sessionId) {
+        try {
+          await migrateShortSession(projectRoot, options.sessionId, result.storyId);
+        } catch {
+          // 会话绑定是 best-effort:可能 session 已迁移或已删除,不影响短篇产物。
+        }
+      }
 
       return textResult(
         [

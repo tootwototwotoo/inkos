@@ -6,7 +6,6 @@ import { Dashboard } from "./pages/Dashboard";
 import { ChatPage } from "./pages/ChatPage";
 import { BookDetail } from "./pages/BookDetail";
 import { ChapterReader } from "./pages/ChapterReader";
-import { ShortReader } from "./pages/ShortReader";
 import { Analytics } from "./pages/Analytics";
 import { ServiceListPage } from "./pages/ServiceListPage";
 import { ServiceDetailPage } from "./pages/ServiceDetailPage";
@@ -123,9 +122,11 @@ export function App() {
   const activePage =
     activeBookId
       ? `book:${activeBookId}`
-      : route.page === "service-detail"
-        ? "services"
-        : route.page;
+      : route.page === "short"
+        ? `short:${route.storyId}`
+        : route.page === "service-detail"
+          ? "services"
+          : route.page;
 
   const startupGate = deriveStartupGate({ ready, projectError });
 
@@ -351,8 +352,15 @@ export function App() {
             </div>
           )}
           {route.page === "short" && (
-            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
-              <ShortReader storyId={route.storyId} nav={nav} theme={theme} t={t} />
+            <div className="absolute inset-0 flex min-w-0">
+              <ChatPage
+                activeBookId={route.storyId}
+                mode="short"
+                nav={nav}
+                theme={theme}
+                t={t}
+                sse={sse}
+              />
             </div>
           )}
           {route.page === "film" && (

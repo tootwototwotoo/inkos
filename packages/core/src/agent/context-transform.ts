@@ -4,7 +4,6 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isNewLayoutBook } from "../utils/outline-paths.js";
 import type { ContextCompressionCallback } from "../models/context-compression.js";
-
 /** Files read in this order; anything else in story/ comes after, sorted alphabetically. */
 const PRIORITY_FILES = [
   "outline/story_frame.md",
@@ -69,6 +68,96 @@ export function createBookContextTransform(
         sources: compactedSources,
       });
     }
+
+    const injected: UserMessage = {
+      role: "user",
+      content: body,
+      timestamp: Date.now(),
+    };
+
+    return [injected, ...messages];
+  };
+}
+
+/**
+ * 短篇继续编辑会话的上下文注入:读取 shorts/<storyId>/final/ 下的正文与元数据,
+ * 注入为 user message,让 AI 在修改前知道当前短篇内容。格式与 book 的上下文压缩包一致。
+ *
+ * 与 book 不同:短篇没有 story/ 目录,真相文件集中在 final/。正文(final/full.md)
+ * 是首要内容;超长时只注入章节标题索引,正文按需用 read 读取。
+ */
+export function createShortContextTransform(
+  storyId: string,
+  projectRoot: string,
+  options: { readonly onContextCompression?: ContextCompressionCallback } = {},
+): (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]> {
+  const shortDir = join(projectRoot, "shorts", storyId);
+  const finalDir = join(shortDir, "final");
+
+  return async (messages) => {
+    const sections: TruthFileSection[] = [];
+
+    // 元数据(short-story.json 解析出标题/章节标题列表)
+    let storyTitle = storyId;
+    let chapterTitles: string[] = [];
+    try {
+      const raw = await readFile(join(finalDir, "short-story.json"), "utf-8");
+      const parsed = JSON.parse(raw) as { storyTitle?: unknown; chapters?: unknown };
+      if (typeof parsed.storyTitle === "string" && parsed.storyTitle.trim()) {
+        storyTitle = parsed.storyTitle.trim();
+      }
+      if (Array.isArray(parsed.chapters)) {
+        chapterTitles = parsed.chapters
+          .map((c) => (c && typeof c === "object" && "title" in c && typeof (c as { title: unknown }).title === "string" ? (c as { title: string }).title : null))
+          .filter((t): t is string => Boolean(t));
+      }
+    } catch {
+      // short-story.json 缺失,回退到 storyId
+    }
+
+    // 正文(final/full.md):超长则只注入章节标题索引
+    const fullMdPath = join(finalDir, "full.md");
+    try {
+      const content = await readFile(fullMdPath, "utf-8");
+      if (content.length <= FULL_INLINE_CHAR_LIMIT) {
+        sections.push({ name: "final/full.md", content });
+      } else {
+        const index = buildMarkdownFileIndex(content);
+        sections.push({
+          name: "final/full.md",
+          content: [
+            `[未全文注入：原文件 ${content.length} 字符 / ${index.totalLines} 行。以下为 Markdown 目录索引；需要正文时用 read 读取 final/full.md 或 final/chapters/NNNN.md。]`,
+            index.lines.length > 0 ? index.lines.join("\n") : "[未检测到 Markdown 标题。]",
+            index.omittedHeadings > 0 ? `[未注入标题数：${index.omittedHeadings}。]` : "",
+          ].filter(Boolean).join("\n"),
+        });
+        options.onContextCompression?.({
+          category: "session_context",
+          phase: "start",
+          sources: ["final/full.md"],
+        });
+        options.onContextCompression?.({
+          category: "session_context",
+          phase: "end",
+          sources: ["final/full.md"],
+        });
+      }
+    } catch {
+      // full.md 缺失,短篇可能未完成;注入章节标题列表作为替代
+      if (chapterTitles.length > 0) {
+        sections.push({
+          name: "final/short-story.json (chapters)",
+          content: chapterTitles.map((t, i) => `${String(i + 1).padStart(4, "0")}. ${t}`).join("\n"),
+        });
+      }
+    }
+
+    if (sections.length === 0) return messages;
+
+    const body =
+      `[以下是当前短篇《${storyTitle}》(${storyId})的上下文压缩包，每次对话时自动从磁盘读取生成。` +
+      `请基于这些内容进行修改和判断；需要完整原文时按文件读取。短篇产物在 shorts/${storyId}/。]\n\n` +
+      sections.map(renderContextSection).join("\n\n");
 
     const injected: UserMessage = {
       role: "user",

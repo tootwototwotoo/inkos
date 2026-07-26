@@ -223,6 +223,36 @@ export async function migrateBookSession(
   return loadBookSession(projectRoot, sessionId);
 }
 
+/**
+ * 把一个 orphan(bookId === null)的 short 会话绑定到短篇 storyId,
+ * 保持 sessionKind="short"(不像 migrateBookSession 那样强制改成 "book")。
+ *
+ * 用于 short_fiction_run 生产完成后,把当前 transient short 会话变成
+ * "该短篇的继续编辑会话",这样侧栏短篇区块展开后能看到它,后续对话能
+ * 拿到 storyId 绑定的读取/编辑工具集。
+ */
+export async function migrateShortSession(
+  projectRoot: string,
+  sessionId: string,
+  storyId: string,
+): Promise<BookSession | null> {
+  const session = await loadBookSession(projectRoot, sessionId);
+  if (!session) return null;
+  // 已绑定到同一个 storyId:幂等返回,不报错。
+  if (session.bookId === storyId) return session;
+  // 已绑定到别的 id:报错,避免误覆盖。
+  if (session.bookId !== null) {
+    throw new SessionAlreadyMigratedError(sessionId, session.bookId);
+  }
+
+  await appendSessionMetadataUpdatedEvent(projectRoot, sessionId, {
+    bookId: storyId,
+    sessionKind: "short",
+    updatedAt: Date.now(),
+  });
+  return loadBookSession(projectRoot, sessionId);
+}
+
 export async function createAndPersistBookSession(
   projectRoot: string,
   bookId: string | null,

@@ -230,14 +230,15 @@ export function Sidebar({ nav, activePage, sse, t }: {
   const sessionsByBook = useMemo(
     () =>
       Object.fromEntries(
-        books.map((book) => [
-          book.id,
-          (sessionIdsByBook[book.id] ?? [])
-            .map((sessionId) => sessions[sessionId])
-            .filter(Boolean),
-        ]),
+        [...books, ...shorts.map((s) => ({ id: s.storyId, title: s.title }))]
+          .map((entry) => [
+            entry.id,
+            (sessionIdsByBook[entry.id] ?? [])
+              .map((sessionId) => sessions[sessionId])
+              .filter(Boolean),
+          ]),
       ) as Record<string, Array<(typeof sessions)[string]>>,
-    [books, sessionIdsByBook, sessions],
+    [books, shorts, sessionIdsByBook, sessions],
   );
 
   const openSession = (bookId: string, sessionId: string) => {
@@ -254,6 +255,20 @@ export function Sidebar({ nav, activePage, sse, t }: {
     setInput("");
     createDraftSession(bookId, "book");
     nav.toBook(bookId);
+  };
+
+  const openShortSession = (storyId: string, sessionId: string) => {
+    setInput("");
+    activateSession(sessionId);
+    nav.toShort(storyId);
+    void loadSessionDetail(sessionId);
+  };
+
+  const handleCreateShortSession = (storyId: string) => {
+    setExpandedBooks((prev) => new Set(prev).add(storyId));
+    setInput("");
+    createDraftSession(storyId, "short");
+    nav.toShort(storyId);
   };
 
   const openProjectChatSession = (sessionId: string) => {
@@ -461,34 +476,89 @@ export function Sidebar({ nav, activePage, sse, t }: {
         <div data-testid="shorts-section">
           <SectionHeader label={t("nav.myShorts")} expanded={shortsExpanded} onToggle={() => setShortsExpanded((v) => !v)} />
           <Collapse open={shortsExpanded}>
-            <div className="space-y-0.5 pt-1">
-              {shorts.map((short) => (
-                <button
-                  key={short.storyId}
-                  type="button"
-                  data-testid={`short-${short.storyId}`}
-                  onClick={() => nav.toShort(short.storyId)}
-                  className="group/short w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-left hover:bg-secondary/30 transition-colors"
-                  title={tr(`查看《${short.title}》`, `View ${short.title}`)}
-                >
-                  <ScrollText size={14} className="shrink-0 text-muted-foreground/70" />
-                  <span className="truncate flex-1 text-[15px] text-foreground">{short.title}</span>
-                  {short.hasCover && (
-                    <span className="shrink-0 text-muted-foreground/50" title={tr("已生成封面", "Cover generated")}>
-                      <BookCopy size={12} />
-                    </span>
-                  )}
-                  {short.chapterCount != null && (
-                    <span className="shrink-0 text-[11px] text-muted-foreground/50">{short.chapterCount}{tr("章", "ch")}</span>
-                  )}
-                </button>
-              ))}
-              {shorts.length === 0 && (
-                <div className="px-3 py-6 text-xs text-muted-foreground/50 italic text-center">
-                  {tr("还没有短篇作品", "No short fiction yet")}
+          <div className="space-y-0.5 pt-1">
+            {shorts.map((short) => {
+              const shortSessions = sessionsByBook[short.storyId] ?? [];
+              const isActiveShort = activePage === `short:${short.storyId}`;
+              const isShortExpanded = expandedBooks.has(short.storyId);
+              return (
+                <div key={short.storyId}>
+                  {/* 短篇标题行:箭头展开;标题进入该短篇的会话区 */}
+                  <div className="group/short flex items-center">
+                    <button
+                      type="button"
+                      aria-label={isShortExpanded ? tr(`折叠 ${short.title}`, `Collapse ${short.title}`) : tr(`展开 ${short.title}`, `Expand ${short.title}`)}
+                      onClick={() => toggleBook(short.storyId)}
+                      className="flex h-8 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 hover:bg-secondary/30 hover:text-foreground transition-colors"
+                    >
+                      <ChevronRight size={12} className={`transition-transform ${isShortExpanded ? "rotate-90" : ""}`} />
+                    </button>
+                    <button
+                      type="button"
+                      data-testid={`short-${short.storyId}`}
+                      onClick={() => nav.toShort(short.storyId)}
+                      className={`flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pr-2 rounded-md text-[15px] leading-6 transition-colors ${
+                        isActiveShort ? "text-foreground font-medium" : "text-muted-foreground hover:text-foreground hover:bg-secondary/30"
+                      }`}
+                      title={tr(`查看《${short.title}》`, `View ${short.title}`)}
+                    >
+                      <ScrollText size={14} className="shrink-0 text-muted-foreground/60" />
+                      <span className="truncate flex-1 text-left">{short.title}</span>
+                      {short.hasCover && (
+                        <span className="shrink-0 text-muted-foreground/50" title={tr("已生成封面", "Cover generated")}>
+                          <BookCopy size={12} />
+                        </span>
+                      )}
+                      {short.chapterCount != null && (
+                        <span className="shrink-0 text-[11px] text-muted-foreground/50">{short.chapterCount}{tr("章", "ch")}</span>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* 展开后:会话列表 + 新建会话 */}
+                  <Collapse open={isShortExpanded}>
+                    <div className="mt-0.5">
+                      {shortSessions.map((session) => {
+                        const isActiveSession = isActiveShort && activeSessionId === session.sessionId;
+                        const label = getSessionLabel(session);
+                        return (
+                          <div
+                            key={session.sessionId}
+                            className={`group/session flex items-center rounded-md ${isActiveSession ? "bg-secondary/50" : "hover:bg-secondary/30"}`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => openShortSession(short.storyId, session.sessionId)}
+                              className="flex min-w-0 flex-1 items-center gap-2 pl-9 pr-2 py-1.5 text-left text-[14px] leading-5 transition-colors"
+                            >
+                              <SessionKindIcon kind={session.sessionKind} className="shrink-0 text-muted-foreground/60" />
+                              <span className={`truncate flex-1 ${isActiveSession ? "text-foreground" : "text-muted-foreground group-hover/session:text-foreground"}`}>
+                                {label}
+                              </span>
+                            </button>
+                          </div>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={() => void handleCreateShortSession(short.storyId)}
+                        className="w-full flex items-center gap-2 pl-9 pr-2 py-1.5 text-[13px] text-muted-foreground/50 hover:text-foreground transition-colors"
+                      >
+                        <Plus size={12} />
+                        <span>{tr("新建会话", "New session")}</span>
+                      </button>
+                    </div>
+                  </Collapse>
                 </div>
-              )}
-            </div>
+              );
+            })}
+
+            {shorts.length === 0 && (
+              <div className="px-3 py-6 text-xs text-muted-foreground/50 italic text-center">
+                {tr("还没有短篇作品", "No short fiction yet")}
+              </div>
+            )}
+          </div>
           </Collapse>
         </div>
 

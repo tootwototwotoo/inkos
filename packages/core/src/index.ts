@@ -292,6 +292,7 @@ export {
   renameBookSession,
   deleteBookSession,
   migrateBookSession,
+  migrateShortSession,
   createAndPersistBookSession,
   SessionAlreadyMigratedError,
 } from "./interaction/book-session-store.js";

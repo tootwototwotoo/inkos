@@ -1486,7 +1486,7 @@ async function executeConfirmedProductionAction(args: {
     const payload = actionPayload?.shortRun;
     const direction = payload?.direction?.trim() || args.instruction.trim();
     if (!direction) throw new ApiError(400, "CONFIRMED_ACTION_PAYLOAD_INCOMPLETE", pick(lang, "确认短篇缺少方向，请重新生成确认卡。", "The short fiction confirmation is missing a direction. Regenerate the confirmation card."));
-    tool = createShortFictionRunTool(args.pipeline, args.root, { actionPayload, language: lang });
+    tool = createShortFictionRunTool(args.pipeline, args.root, { actionPayload, language: lang, sessionId: args.sessionId });
     params = {
       direction,
       ...(payload?.reference ? { reference: payload.reference } : {}),
@@ -4536,11 +4536,24 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
         bookSession = updatedSession;
       }
       let activeBookConfig: { readonly language?: string } | null = null;
-      if (agentBookId && sessionKind !== "interactive-film-authoring") {
+      if (agentBookId && sessionKind !== "interactive-film-authoring" && sessionKind !== "short") {
         try {
           activeBookConfig = await state.loadBookConfig(agentBookId);
         } catch {
           throw new ApiError(404, "BOOK_NOT_FOUND", `Book not found: ${agentBookId}`);
+        }
+      }
+      // short 会话:agentBookId 是 storyId,没有 books/<id>/book.json。
+      // 从 shorts/<storyId>/final/short-story.json 读 language 代替。
+      if (agentBookId && sessionKind === "short") {
+        try {
+          const shortJson = await readFile(join(root, "shorts", agentBookId, "final", "short-story.json"), "utf-8");
+          const parsed = JSON.parse(shortJson) as { language?: unknown };
+          if (typeof parsed.language === "string") {
+            activeBookConfig = { language: parsed.language };
+          }
+        } catch {
+          // short-story.json 缺失(短篇可能未完成),language 留空,回退到 configLanguage。
         }
       }
       const configLanguage = config.language === "en" ? "en" : "zh";
