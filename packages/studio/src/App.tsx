@@ -25,6 +25,7 @@ const FlowView = lazy(() => import("./pages/FlowView"));
 const FilmWizard = lazy(() => import("./pages/FilmWizard"));
 import { LanguageSelector } from "./pages/LanguageSelector";
 import { BookSidebar, BookSidebarToggle } from "./components/chat/BookSidebar";
+import { ShortSidebar, ShortSidebarToggle } from "./components/chat/ShortSidebar";
 import { useSSE } from "./hooks/use-sse";
 import { useSessionEvents } from "./hooks/use-session-events";
 import { useTheme } from "./hooks/use-theme";
@@ -361,6 +362,8 @@ export function App() {
                 t={t}
                 sse={sse}
               />
+              <ShortSidebar storyId={route.storyId} theme={theme} t={t} sse={sse} />
+              <ShortSidebarToggle storyId={route.storyId} theme={theme} t={t} sse={sse} />
             </div>
           )}
           {route.page === "film" && (

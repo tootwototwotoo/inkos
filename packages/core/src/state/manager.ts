@@ -33,6 +33,24 @@ export interface ShortSummary {
   readonly createdAt: number | null;
 }
 
+/** 短篇单个章节的摘要(供侧栏章节列表展示)。filePath 是相对项目根的路径。 */
+export interface ShortChapter {
+  readonly number: number;
+  readonly title: string;
+  readonly charCount: number | null;
+  readonly filePath: string;
+}
+
+/** 短篇详情:元数据 + 章节列表。供 Studio 短篇侧栏使用。 */
+export interface ShortDetail {
+  readonly storyId: string;
+  readonly title: string;
+  readonly language: string | null;
+  readonly hasCover: boolean;
+  readonly createdAt: number | null;
+  readonly chapters: ReadonlyArray<ShortChapter>;
+}
+
 // Studio creates a PipelineRunner per request. Lock ownership therefore has to
 // be shared by every StateManager in this process, not stored on one instance.
 const processBookLocks = new Map<string, ProcessBookLock>();
@@ -486,6 +504,76 @@ export class StateManager {
     } catch {
       return [];
     }
+  }
+
+  /**
+   * 读取单个短篇详情:元数据 + 章节列表(含每章的 number/title/charCount/filePath)。
+   * 章节文件名与 runner 落盘一致:final/chapters/NNNN.md(4 位数字,无标题后缀)。
+   * 若短篇不存在或未完成(final/full.md 缺失),返回 null。
+   */
+  async loadShortDetail(storyId: string): Promise<ShortDetail | null> {
+    const baseDir = join(this.shortsDir, storyId);
+    const fullMdPath = join(baseDir, "final", "full.md");
+    try {
+      await stat(fullMdPath);
+    } catch {
+      return null;
+    }
+    const meta = await this.readShortMeta(storyId);
+
+    // 从 short-story.json 读章节列表;缺失则回退到扫描 final/chapters/ 目录。
+    let chapters: ShortChapter[] = [];
+    try {
+      const raw = await readFile(join(baseDir, "final", "short-story.json"), "utf-8");
+      const parsed = JSON.parse(raw) as { chapters?: unknown };
+      if (Array.isArray(parsed.chapters)) {
+        chapters = parsed.chapters
+          .map((c): ShortChapter | null => {
+            if (!c || typeof c !== "object") return null;
+            const obj = c as { number?: unknown; title?: unknown; charCount?: unknown };
+            if (typeof obj.number !== "number") return null;
+            const num = obj.number;
+            return {
+              number: num,
+              title: typeof obj.title === "string" ? obj.title : `Chapter ${num}`,
+              charCount: typeof obj.charCount === "number" ? obj.charCount : null,
+              filePath: `shorts/${storyId}/final/chapters/${String(num).padStart(4, "0")}.md`,
+            };
+          })
+          .filter((c): c is ShortChapter => c !== null);
+      }
+    } catch {
+      // short-story.json 缺失,回退到扫描目录
+    }
+    if (chapters.length === 0) {
+      try {
+        const chaptersDir = join(baseDir, "final", "chapters");
+        const entries = await readdir(chaptersDir);
+        chapters = entries
+          .filter((name) => /^\d{4}\.md$/.test(name))
+          .sort()
+          .map((name) => {
+            const num = parseInt(name.slice(0, 4), 10);
+            return {
+              number: num,
+              title: `Chapter ${num}`,
+              charCount: null,
+              filePath: `shorts/${storyId}/final/chapters/${name}`,
+            };
+          });
+      } catch {
+        // chapters 目录缺失,返回空列表
+      }
+    }
+
+    return {
+      storyId,
+      title: meta.title ?? storyId,
+      language: meta.language,
+      hasCover: meta.hasCover,
+      createdAt: meta.createdAt,
+      chapters,
+    };
   }
 
   private async readShortMeta(

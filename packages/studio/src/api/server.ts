@@ -2866,6 +2866,15 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     return c.json({ shorts });
   });
 
+  app.get("/api/v1/shorts/:id", async (c) => {
+    const id = c.req.param("id");
+    const short = await state.loadShortDetail(id);
+    if (!short) {
+      return c.json({ error: `Short fiction "${id}" not found` }, 404);
+    }
+    return c.json({ short });
+  });
+
   app.get("/api/v1/books/:id", async (c) => {
     const id = c.req.param("id");
     try {
