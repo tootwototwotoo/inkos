@@ -42,7 +42,7 @@ import {
   createRetrieveMaterialTool,
   createImportChaptersTool,
 } from "./agent-tools.js";
-import { createEditShortFileTool, createWriteShortFileTool } from "./short-edit-tools.js";
+import { createEditShortFileTool, createWriteShortFileTool, createReadShortFileTool } from "./short-edit-tools.js";
 import { createFilmAuthoringTools, filmLLMDepsFromClient } from "./film-authoring-tools.js";
 import {
   createNarrativeForecastCreateTool,
@@ -828,14 +828,14 @@ function createAgentToolsForMode(params: {
     }
     // 已绑定 storyId 的短篇继续编辑会话:给读取+编辑工具,让 AI 能改正文。
     // 未绑定 storyId(bookId === null)时是首次生产前的澄清会话,只给 propose/material。
+    // 注意:不用 book 的 read/grep/ls(它们限定 books/ 目录,对短篇无效),
+    // 改用短篇专属的 read_short_file。
     if (params.bookId) {
       return [
-        createReadTool(params.projectRoot, { allowSystemPaths: params.allowSystemFileRead }),
+        createReadShortFileTool(params.projectRoot, params.bookId),
         createEditShortFileTool(params.projectRoot, params.bookId),
         createWriteShortFileTool(params.projectRoot, params.bookId),
         createGenerateCoverTool(params.projectRoot, { actionPayload: params.actionPayload }),
-        createGrepTool(params.projectRoot),
-        createLsTool(params.projectRoot),
         materialTool,
         materialRetrievalTool,
       ];

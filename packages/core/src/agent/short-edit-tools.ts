@@ -133,3 +133,45 @@ export function createWriteShortFileTool(
     },
   };
 }
+
+const ReadShortFileParams = Type.Object({
+  filePath: Type.String({
+    description:
+      "File path relative to shorts/<storyId>/, e.g. 'final/full.md', 'final/chapters/0003.md', 'final/short-story.json', 'final/sales-package.md'.",
+  }),
+});
+
+type ReadShortFileParamsType = Static<typeof ReadShortFileParams>;
+
+/**
+ * 读取 shorts/<storyId>/ 下的文本文件。
+ * 与 book 的 read 工具不同(它限定 books/),这个工具限定 shorts/<storyId>/,
+ * 供短篇继续编辑会话读取正文、章节、元数据等。
+ */
+export function createReadShortFileTool(
+  projectRoot: string,
+  storyId: string,
+): AgentTool<typeof ReadShortFileParams> {
+  const shortRoot = join(projectRoot, "shorts", storyId);
+
+  return {
+    name: "read_short_file",
+    description:
+      "Read a text file under the active short fiction (shorts/<storyId>/). " +
+      "Use to read the manuscript (final/full.md), a single chapter (final/chapters/NNNN.md), metadata (final/short-story.json), or synopsis (final/sales-package.md) before editing.",
+    label: "Read Short File",
+    parameters: ReadShortFileParams,
+    async execute(
+      _toolCallId: string,
+      params: ReadShortFileParamsType,
+    ): Promise<AgentToolResult<undefined>> {
+      try {
+        const filePath = safeChildPath(shortRoot, params.filePath);
+        const content = await readFile(filePath, "utf-8");
+        return textResult(content);
+      } catch (err: any) {
+        return textResult(`Failed to read "${params.filePath}": ${err?.message ?? String(err)}`);
+      }
+    },
+  };
+}

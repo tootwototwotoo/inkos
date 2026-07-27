@@ -130,26 +130,26 @@ describe("providers structural integrity", () => {
     expect(nonCoding.length).toBe(30);
   });
 
-  it("B6：CodingPlan 8 个 provider 全部收录", () => {
+  it("B6：CodingPlan 9 个 provider 全部收录", () => {
     const ids = getAllEndpoints().map((p) => p.id);
     for (const id of [
       "kimiCodingPlan", "minimaxCodingPlan", "bailianCodingPlan",
-      "glmCodingPlan", "volcengineCodingPlan", "opencodeCodingPlan",
-      "astronCodingPlan", "kimicode",
+      "glmCodingPlan", "volcengineCodingPlan", "volcengineAgentPlan",
+      "opencodeCodingPlan", "astronCodingPlan", "kimicode",
     ]) {
       expect(ids).toContain(id);
     }
   });
 
-  it("B6：总 provider 数 = 38 (30 base + 8 CodingPlan)", () => {
-    expect(getAllEndpoints().length).toBe(38);
+  it("B6：总 provider 数 = 39 (30 base + 9 CodingPlan)", () => {
+    expect(getAllEndpoints().length).toBe(39);
   });
 
   it("B6：CodingPlan provider 都走 anthropic-messages", () => {
     for (const id of [
       "kimiCodingPlan", "minimaxCodingPlan", "bailianCodingPlan",
-      "glmCodingPlan", "volcengineCodingPlan", "opencodeCodingPlan",
-      "astronCodingPlan", "kimicode",
+      "glmCodingPlan", "volcengineCodingPlan", "volcengineAgentPlan",
+      "opencodeCodingPlan", "astronCodingPlan", "kimicode",
     ]) {
       expect(getEndpoint(id)?.api).toBe("anthropic-messages");
     }
