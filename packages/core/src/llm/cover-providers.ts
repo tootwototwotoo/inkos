@@ -45,11 +45,18 @@ export const COVER_PROVIDER_PRESETS: readonly CoverProviderPreset[] = [
     baseUrl: "https://openrouter.ai/api/v1",
     api: "images",
     imagesPath: "/images",
-    defaultModel: "google/gemini-2.5-flash-image",
+    // 只列 OpenRouter /images 端点确认支持的模型(见 GET /api/v1/images/models)。
+    // 注意:google/gemini-2.5-flash-image 是 chat completions 模型,不在 /images 端点,
+    // 用它会报 "Reasoning is mandatory" 之类的错误。
+    defaultModel: "google/gemini-3.1-flash-image",
     models: [
-      "google/gemini-2.5-flash-image",
+      "google/gemini-3.1-flash-image",
+      "google/gemini-3-pro-image",
       "google/gemini-3.1-flash-image-preview",
-      "google/gemini-3-pro-image-preview",
+      "google/gemini-3.1-flash-lite-image",
+      "openai/gpt-image-2",
+      "openai/gpt-image-1",
+      "openai/gpt-image-1-mini",
     ],
   },
 ];
