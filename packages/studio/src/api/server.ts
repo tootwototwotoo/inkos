@@ -2333,7 +2333,10 @@ function fallbackTextModelsForEndpoint(
 }
 
 function shouldTrustStaticModelsWhenLiveListUnavailable(endpoint: ReturnType<typeof getAllEndpoints>[number] | undefined): boolean {
-  return endpoint?.group === "aggregator";
+  // aggregator(OpenRouter 等)和 codingPlan(各 CodingPlan 订阅)都没有可靠的
+  // /models 列表端点:aggregator 是模型太多且动态;codingPlan 走 Anthropic
+  // 协议,根本没有 /models 端点。这两类都信任 endpoint bank 的静态模型列表。
+  return endpoint?.group === "aggregator" || endpoint?.group === "codingPlan";
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string, lang: StudioLanguage = "zh"): Promise<T> {
@@ -2450,6 +2453,12 @@ async function fetchModelsFromServiceBaseUrl(
   const endpoint = isCustomServiceId(serviceId)
     ? undefined
     : getAllEndpoints().find((ep) => ep.id === serviceId);
+  // Anthropic 协议的端点(如各 CodingPlan)没有 /models 列表端点,
+  // 打 /models 会返回 401/404,但那不代表 API Key 错误。直接跳过探测,
+  // 让上层用 endpoint bank 的静态模型列表。
+  if (endpoint?.api === "anthropic-messages") {
+    return { models: [] };
+  }
   const modelsBaseUrl = isCustomServiceId(serviceId)
     ? baseUrl
     : endpoint?.modelsBaseUrl ?? (endpoint ? baseUrl : resolveServiceModelsBaseUrl(serviceId) ?? baseUrl);
