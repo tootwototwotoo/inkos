@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { COVER_PROVIDER_PRESETS } from "../llm/cover-providers.js";
 
 /** per-service 模型列表覆盖层:在 probe+bank 基础列表上做增删改。 */
 export const ServiceModelOverridesSchema = z.object({
@@ -21,7 +22,7 @@ const LLMServiceEntrySchema = z.object({
 });
 
 const LLMCoverConfigSchema = z.object({
-  service: z.enum(["kkaiapi", "openai", "google"]),
+  service: z.enum(COVER_PROVIDER_PRESETS.map((p) => p.service) as [string, ...string[]]),
   model: z.string().min(1),
 }).optional();
 
