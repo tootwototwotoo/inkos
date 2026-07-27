@@ -129,17 +129,22 @@ function EditableModelList({
   const handleAdd = () => {
     const id = addInput.trim();
     if (!id) return;
-    if (models.some((m) => m.id === id) || extra.some((e) => e.id === id)) {
+    // 去重检查用 displayed(当前实际显示的列表),而不是原始 models。
+    // 因为清空后原始模型仍在 models 里但被 disabled,用户可能想重新添加。
+    if (displayed.some((m) => m.id === id)) {
       alert(tr("该模型已存在", "Model already exists"));
       return;
     }
     const name = addName.trim() || undefined;
     const nextExtra = [...extra, name ? { id, name } : { id }];
+    // 如果该 id 之前被 disabled 了,现在重新添加,从 disabled 里移除。
+    const nextDisabled = disabled.filter((d) => d !== id);
     setExtra(nextExtra);
+    setDisabled(nextDisabled);
     setAddInput("");
     setAddName("");
     setShowAdd(false);
-    void persist({ disabled, extra: nextExtra, labels });
+    void persist({ disabled: nextDisabled, extra: nextExtra, labels });
   };
 
   const handleStartEdit = (id: string, currentName: string) => {
