@@ -1878,6 +1878,43 @@ async function loadServiceModelOverrides(projectRoot: string, service: string): 
   return services[idx].models;
 }
 
+/**
+ * 对模型列表应用用户覆盖层(disabled/extra/labels)。
+ * 与 core 层 listModelsForService 的覆盖层逻辑一致,但作用于已取好的列表
+ * (用于 /services/models 和 /services/models/custom,它们不经过 listModelsForService)。
+ */
+function applyModelOverrides(
+  models: ReadonlyArray<{ readonly id: string; readonly name?: string; readonly maxOutput?: number; readonly contextWindow?: number }>,
+  overrides: ServiceModelOverrides | undefined,
+): ReadonlyArray<{ readonly id: string; readonly name?: string; readonly maxOutput?: number; readonly contextWindow?: number }> {
+  if (!overrides) return models;
+  const byId = new Map(models.map((m) => [m.id, { ...m }]));
+  // 1) 加 extra
+  if (overrides.extra) {
+    for (const e of overrides.extra) {
+      if (!byId.has(e.id)) {
+        byId.set(e.id, { id: e.id, name: e.name ?? e.id });
+      }
+    }
+  }
+  // 2) 删 disabled
+  if (overrides.disabled) {
+    for (const id of overrides.disabled) {
+      byId.delete(id);
+    }
+  }
+  // 3) 应用 labels
+  if (overrides.labels) {
+    for (const [id, label] of Object.entries(overrides.labels)) {
+      const existing = byId.get(id);
+      if (existing && label) {
+        byId.set(id, { ...existing, name: label });
+      }
+    }
+  }
+  return Array.from(byId.values());
+}
+
 function normalizeServiceEntry(serviceId: string, value: Record<string, unknown>): ServiceConfigEntry {
   const models = normalizeModelOverrides(value.models);
   if (serviceId.startsWith("custom:")) {
@@ -3800,10 +3837,9 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     const endpoints = getAllEndpoints()
       .filter((ep) => ep.id !== "custom" && Boolean(secrets.services[ep.id]?.apiKey));
 
-    const groups = endpoints.map((ep) => ({
-      service: ep.id,
-      label: ep.label,
-      models: ep.models
+    const groups = await Promise.all(endpoints.map(async (ep) => {
+      const overrides = await loadServiceModelOverrides(root, ep.id);
+      const baseModels = ep.models
         .filter((m) => m.enabled !== false)
         .filter((m) => isTextChatModelId(m.id))
         .map((m) => ({
@@ -3811,7 +3847,12 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
           name: m.id,
           ...(typeof m.maxOutput === "number" ? { maxOutput: m.maxOutput } : {}),
           ...(m.contextWindowTokens > 0 ? { contextWindow: m.contextWindowTokens } : {}),
-        })),
+        }));
+      return {
+        service: ep.id,
+        label: ep.label,
+        models: applyModelOverrides(baseModels, overrides),
+      };
     }));
 
     return c.json({ groups });
@@ -3835,13 +3876,17 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       }))
       .filter((s) => s.baseUrl && Boolean(secrets.services[s.id]?.apiKey));
 
-    const groups = await Promise.all(customs.map(async (s) => ({
-      service: s.id,
-      label: s.label,
-      models: filterTextChatModels(
+    const groups = await Promise.all(customs.map(async (s) => {
+      const overrides = await loadServiceModelOverrides(root, s.id);
+      const baseModels = filterTextChatModels(
         await probeModelsFromUpstream(s.baseUrl, secrets.services[s.id].apiKey, 10_000),
-      ),
-    })));
+      );
+      return {
+        service: s.id,
+        label: s.label,
+        models: applyModelOverrides(baseModels, overrides),
+      };
+    }));
 
     return c.json({ groups });
   });
