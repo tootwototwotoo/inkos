@@ -167,6 +167,20 @@ function EditableModelList({
     void persist({});
   };
 
+  const handleClearAll = () => {
+    // 把所有模型(bank + extra)都加入 disabled,使列表清空。
+    // 与"重置"相反:重置是清除覆盖层恢复原始列表,清空是删掉全部模型。
+    const allIds = [
+      ...models.map((m) => m.id),
+      ...extra.map((e) => e.id),
+    ];
+    const nextDisabled = Array.from(new Set([...disabled, ...allIds]));
+    setDisabled(nextDisabled);
+    setExtra([]);
+    setLabels({});
+    void persist({ disabled: nextDisabled, extra: [], labels: {} });
+  };
+
   const hasOverrides = disabled.length > 0 || extra.length > 0 || Object.keys(labels).length > 0;
 
   return (
@@ -186,6 +200,18 @@ function EditableModelList({
             >
               <RotateCcw size={11} />
               {tr("重置", "Reset")}
+            </button>
+          )}
+          {displayed.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearAll}
+              disabled={saving}
+              className="flex items-center gap-1 text-[11px] text-muted-foreground/60 hover:text-destructive transition-colors"
+              title={tr("清空所有模型，从空白开始添加", "Clear all models, start from empty")}
+            >
+              <Trash2 size={11} />
+              {tr("清空", "Clear")}
             </button>
           )}
           <button
