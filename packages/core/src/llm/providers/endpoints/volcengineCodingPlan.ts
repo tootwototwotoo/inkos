@@ -22,7 +22,7 @@ export const VOLCENGINE_CODING_PLAN: InkosEndpoint = {
   group: "codingPlan",
   api: "anthropic-messages",
   baseUrl: "https://ark.cn-beijing.volces.com/api/coding",
-  checkModel: "doubao-seed-2.0-code",
+  checkModel: "auto",
   temperatureRange: [0, 1],
   defaultTemperature: 0.7,
   writingTemperature: 1,
