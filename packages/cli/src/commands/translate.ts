@@ -54,7 +54,7 @@ translateCommand
       const root = findProjectRoot();
       const config = await loadConfig({ requireApiKey: true, projectRoot: root });
       const model = createLLMTranslationModel({
-        client: createClient(config),
+        client: createClient(config, root),
         model: config.llm.model,
         maxTokens: opts.maxTokens,
       });

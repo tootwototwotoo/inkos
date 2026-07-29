@@ -2580,7 +2580,7 @@ describe("createStudioServer daemon lifecycle", () => {
       service: "ollama",
       model: "Qwen3.6-35B-A3B-APEX-I-Mini.gguf",
       apiKey: "",
-    }));
+    }), expect.anything());
     expect(pipelineConfigs.at(-1)).toMatchObject({
       model: "Qwen3.6-35B-A3B-APEX-I-Mini.gguf",
     });
@@ -5032,7 +5032,7 @@ describe("createStudioServer daemon lifecycle", () => {
       service: "ollama",
       model: "Qwen3.6-35B-A3B-APEX-I-Mini.gguf",
       apiKey: "",
-    }));
+    }), expect.anything());
     expect(pipelineConfigs.at(-1)).toMatchObject({
       client: expect.objectContaining({ _apiKey: "" }),
       model: "Qwen3.6-35B-A3B-APEX-I-Mini.gguf",

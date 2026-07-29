@@ -59,8 +59,8 @@ export async function loadConfigWithDiagnostics(options?: {
   });
 }
 
-export function createClient(config: ProjectConfig) {
-  return createLLMClient(config.llm);
+export function createClient(config: ProjectConfig, root?: string) {
+  return createLLMClient(config.llm, root);
 }
 
 export function parseLLMOverridesFromArgv(argv: readonly string[]): LLMConfigCliOverrides {
@@ -143,7 +143,7 @@ export function buildPipelineConfig(
     : undefined;
 
   return {
-    client: createLLMClient(config.llm),
+    client: createLLMClient(config.llm, root),
     model: config.llm.model,
     projectRoot: root,
     defaultLLMConfig: config.llm,

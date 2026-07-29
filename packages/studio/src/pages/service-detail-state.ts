@@ -3,6 +3,8 @@ import { fetchJson } from "../hooks/use-api";
 export interface ServiceDetailModelInfo {
   readonly id: string;
   readonly name?: string;
+  readonly contextWindow?: number;
+  readonly maxOutput?: number;
 }
 
 export interface ServiceDetailDetectedConfig {
@@ -235,7 +237,7 @@ export async function deleteServiceConfig(
 
 export interface ServiceModelOverridesPayload {
   readonly disabled?: ReadonlyArray<string>;
-  readonly extra?: ReadonlyArray<{ readonly id: string; readonly name?: string }>;
+  readonly extra?: ReadonlyArray<{ readonly id: string; readonly name?: string; readonly contextWindowTokens?: number; readonly maxOutput?: number }>;
   readonly labels?: Readonly<Record<string, string>>;
 }
 

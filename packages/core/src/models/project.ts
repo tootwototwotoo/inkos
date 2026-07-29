@@ -4,7 +4,14 @@ import { COVER_PROVIDER_PRESETS } from "../llm/cover-providers.js";
 /** per-service 模型列表覆盖层:在 probe+bank 基础列表上做增删改。 */
 export const ServiceModelOverridesSchema = z.object({
   disabled: z.array(z.string()).optional(),
-  extra: z.array(z.object({ id: z.string().min(1), name: z.string().optional() })).optional(),
+  extra: z.array(z.object({
+    id: z.string().min(1),
+    name: z.string().optional(),
+    /** 用户填写的上下文窗口大小(tokens)，运行时覆盖 128k 默认回退。 */
+    contextWindowTokens: z.number().int().positive().optional(),
+    /** 用户填写的最大输出(tokens)，运行时覆盖 24k 默认回退。 */
+    maxOutput: z.number().int().positive().optional(),
+  })).optional(),
   labels: z.record(z.string()).optional(),
 });
 

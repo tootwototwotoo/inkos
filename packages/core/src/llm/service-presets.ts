@@ -160,7 +160,7 @@ export async function listModelsForService(
   service: string,
   apiKey?: string,
   liveBaseUrl?: string,
-  overrides?: { readonly disabled?: ReadonlyArray<string>; readonly extra?: ReadonlyArray<{ readonly id: string; readonly name?: string }>; readonly labels?: Readonly<Record<string, string>> },
+  overrides?: { readonly disabled?: ReadonlyArray<string>; readonly extra?: ReadonlyArray<{ readonly id: string; readonly name?: string; readonly contextWindowTokens?: number; readonly maxOutput?: number }>; readonly labels?: Readonly<Record<string, string>> },
 ): Promise<ReadonlyArray<ModelInfo>> {
   const provider = getEndpoint(service);
   const preset = SERVICE_PRESETS[service];
@@ -205,7 +205,12 @@ export async function listModelsForService(
     if (overrides.extra) {
       for (const m of overrides.extra) {
         if (!byId.has(m.id)) {
-          byId.set(m.id, { id: m.id, name: m.name ?? m.id, contextWindow: 0 });
+          byId.set(m.id, {
+            id: m.id,
+            name: m.name ?? m.id,
+            contextWindow: m.contextWindowTokens ?? 0,
+            ...(m.maxOutput !== undefined ? { maxOutput: m.maxOutput } : {}),
+          });
         }
       }
     }

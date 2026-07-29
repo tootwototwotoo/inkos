@@ -14,8 +14,8 @@ export const agentCommand = new Command("agent")
   .action(async (instruction: string, opts) => {
     try {
       const config = await loadConfig();
-      const client = createClient(config);
       const root = findProjectRoot();
+      const client = createClient(config, root);
       const context = await resolveContext(opts);
 
       const fullInstruction = context

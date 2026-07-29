@@ -22,6 +22,13 @@ interface Nav {
   toServices: () => void;
 }
 
+/** 格式化 tokens 数为简短显示(如 128000 -> "128K", 1000000 -> "1M")。 */
+function formatTokens(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(tokens % 1_000_000 === 0 ? 0 : 1)}M`;
+  if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}K`;
+  return String(tokens);
+}
+
 function DetailSkeleton() {
   return (
     <div className="max-w-xl mx-auto space-y-6 animate-pulse">
@@ -52,10 +59,12 @@ function EditableModelList({
   readonly onRefresh: () => void;
 }) {
   const [disabled, setDisabled] = useState<ReadonlyArray<string>>([]);
-  const [extra, setExtra] = useState<ReadonlyArray<{ id: string; name?: string }>>([]);
+  const [extra, setExtra] = useState<ReadonlyArray<{ id: string; name?: string; contextWindowTokens?: number; maxOutput?: number }>>([]);
   const [labels, setLabels] = useState<Record<string, string>>({});
   const [addInput, setAddInput] = useState("");
   const [addName, setAddName] = useState("");
+  const [addContext, setAddContext] = useState("");
+  const [addMax, setAddMax] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState("");
   const [saving, setSaving] = useState(false);
@@ -84,8 +93,12 @@ function EditableModelList({
           setExtra(m.extra
             .filter((e): e is Record<string, unknown> => Boolean(e) && typeof e === "object" && typeof (e as { id?: unknown }).id === "string")
             .map((e) => {
-              const obj = e as { id: string; name?: unknown };
-              return typeof obj.name === "string" ? { id: obj.id, name: obj.name } : { id: obj.id };
+              const obj = e as { id: string; name?: unknown; contextWindowTokens?: unknown; maxOutput?: unknown };
+              const item: { id: string; name?: string; contextWindowTokens?: number; maxOutput?: number } = { id: obj.id };
+              if (typeof obj.name === "string") item.name = obj.name;
+              if (typeof obj.contextWindowTokens === "number" && obj.contextWindowTokens > 0) item.contextWindowTokens = obj.contextWindowTokens;
+              if (typeof obj.maxOutput === "number" && obj.maxOutput > 0) item.maxOutput = obj.maxOutput;
+              return item;
             }));
         }
         if (m.labels && typeof m.labels === "object") {
@@ -105,7 +118,13 @@ function EditableModelList({
     ...models.map((m) => ({ ...m, source: "probed" as const })),
     ...extra
       .filter((e) => !models.some((m) => m.id === e.id))
-      .map((e) => ({ id: e.id, name: labels[e.id] ?? e.name ?? e.id, source: "extra" as const })),
+      .map((e) => ({
+        id: e.id,
+        name: labels[e.id] ?? e.name ?? e.id,
+        source: "extra" as const,
+        ...(e.contextWindowTokens ? { contextWindow: e.contextWindowTokens } : {}),
+        ...(e.maxOutput ? { maxOutput: e.maxOutput } : {}),
+      })),
   ].filter((m) => !disabled.includes(m.id));
 
   const persist = async (next: ServiceModelOverridesPayload) => {
@@ -136,13 +155,21 @@ function EditableModelList({
       return;
     }
     const name = addName.trim() || undefined;
-    const nextExtra = [...extra, name ? { id, name } : { id }];
+    const ctx = addContext.trim() ? parseInt(addContext.trim(), 10) : undefined;
+    const max = addMax.trim() ? parseInt(addMax.trim(), 10) : undefined;
+    const item: { id: string; name?: string; contextWindowTokens?: number; maxOutput?: number } = { id };
+    if (name) item.name = name;
+    if (ctx && ctx > 0) item.contextWindowTokens = ctx;
+    if (max && max > 0) item.maxOutput = max;
+    const nextExtra = [...extra, item];
     // 如果该 id 之前被 disabled 了,现在重新添加,从 disabled 里移除。
     const nextDisabled = disabled.filter((d) => d !== id);
     setExtra(nextExtra);
     setDisabled(nextDisabled);
     setAddInput("");
     setAddName("");
+    setAddContext("");
+    setAddMax("");
     setShowAdd(false);
     void persist({ disabled: nextDisabled, extra: nextExtra, labels });
   };
@@ -266,6 +293,22 @@ function EditableModelList({
                   >
                     {m.name ?? m.id}
                   </span>
+                  {m.contextWindow && m.contextWindow > 0 && (
+                    <span
+                      className="text-[10px] text-muted-foreground/60 px-1 rounded bg-muted/40"
+                      title={tr("上下文窗口", "Context window")}
+                    >
+                      {formatTokens(m.contextWindow)}
+                    </span>
+                  )}
+                  {m.maxOutput && m.maxOutput > 0 && (
+                    <span
+                      className="text-[10px] text-muted-foreground/60 px-1 rounded bg-muted/40"
+                      title={tr("最大输出", "Max output")}
+                    >
+                      {formatTokens(m.maxOutput)}
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleStartEdit(m.id, m.name ?? m.id)}
@@ -307,6 +350,26 @@ function EditableModelList({
             placeholder={tr("显示名（可选）", "Display name (optional)")}
             onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
             className="flex-1 min-w-[120px] bg-background text-xs px-2 py-1 rounded border border-border/40 outline-none focus:border-primary/40"
+          />
+          <input
+            value={addContext}
+            onChange={(e) => setAddContext(e.target.value)}
+            placeholder={tr("上下文窗口（可选）", "Context window (optional)")}
+            onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+            type="number"
+            min="1"
+            className="w-[130px] bg-background text-xs px-2 py-1 rounded border border-border/40 outline-none focus:border-primary/40"
+            title={tr("上下文窗口大小（tokens）", "Context window size (tokens)")}
+          />
+          <input
+            value={addMax}
+            onChange={(e) => setAddMax(e.target.value)}
+            placeholder={tr("最大输出（可选）", "Max output (optional)")}
+            onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+            type="number"
+            min="1"
+            className="w-[110px] bg-background text-xs px-2 py-1 rounded border border-border/40 outline-none focus:border-primary/40"
+            title={tr("最大输出 tokens", "Max output tokens")}
           />
           <button
             type="button"

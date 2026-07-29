@@ -11,7 +11,7 @@ import type {
 } from "@mariozechner/pi-ai";
 import { resolveServicePreset } from "./service-presets.js";
 import { getEndpoint } from "./providers/index.js";
-import { lookupModel } from "./providers/lookup.js";
+import { lookupModel, resolveUserModelCard } from "./providers/lookup.js";
 import { fetchWithProxy } from "../utils/proxy-fetch.js";
 import { isApiKeyOptionalForEndpoint } from "../utils/llm-endpoint-auth.js";
 import { isLlmStubEnabled, stubChatCompletion } from "../agent/llm-stub.js";
@@ -144,12 +144,14 @@ export interface LLMClient {
 
 // === Factory ===
 
-export function createLLMClient(config: LLMConfig): LLMClient {
+export function createLLMClient(config: LLMConfig, projectRoot?: string): LLMClient {
   // C1 (v2.0.0)：config.maxTokens / maxTokensCap 已删除；defaults.maxTokens 完全从 modelCard 推导。
   const _earlyCard = lookupModel(config.service ?? "custom", config.model);
+  // bank miss 时查用户在 provider 配置里填的参数(上下文窗口/最大输出)。
+  const _earlyUserCard = !_earlyCard ? resolveUserModelCard(projectRoot, config.service ?? "custom", config.model) : undefined;
   const defaults = {
     temperature: config.temperature ?? 0.7,
-    maxTokens: _earlyCard?.maxOutput ?? UNKNOWN_MODEL_FALLBACK_MAX_TOKENS,
+    maxTokens: _earlyCard?.maxOutput ?? _earlyUserCard?.maxOutput ?? UNKNOWN_MODEL_FALLBACK_MAX_TOKENS,
     thinkingBudget: config.thinkingBudget ?? 0,
     extra: config.extra ?? {},
   };
@@ -162,6 +164,7 @@ export function createLLMClient(config: LLMConfig): LLMClient {
   const preset = resolveServicePreset(serviceName);
   const inkosProvider = getEndpoint(serviceName);
   const modelCard = lookupModel(serviceName, config.model);
+  const userCard = !modelCard ? resolveUserModelCard(projectRoot, serviceName, config.model) : undefined;
 
   const piApi = resolvePiApi(serviceName, config.apiFormat, (inkosProvider?.api ?? preset?.api) as PiApi) as PiApi;
   const baseUrl = config.baseUrl || inkosProvider?.baseUrl || preset?.baseUrl || "";
@@ -195,8 +198,8 @@ export function createLLMClient(config: LLMConfig): LLMClient {
     reasoning: (config.thinkingBudget ?? 0) > 0,
     input: ["text"] as ("text" | "image")[],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: modelCard?.contextWindowTokens ?? 128_000,
-    maxTokens: modelCard?.maxOutput ?? UNKNOWN_MODEL_FALLBACK_MAX_TOKENS,
+    contextWindow: modelCard?.contextWindowTokens ?? userCard?.contextWindowTokens ?? 128_000,
+    maxTokens: modelCard?.maxOutput ?? userCard?.maxOutput ?? UNKNOWN_MODEL_FALLBACK_MAX_TOKENS,
     ...(extraHeaders ? { headers: extraHeaders } : {}),
     ...(compat ? { compat } : {}),
   };

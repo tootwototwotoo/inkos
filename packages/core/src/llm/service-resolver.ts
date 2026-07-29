@@ -3,6 +3,7 @@ import type { Model, Api } from "@mariozechner/pi-ai";
 import { resolveServicePiProvider, resolveServicePreset } from "./service-presets.js";
 import { getServiceApiKey } from "./secrets.js";
 import { getEndpoint } from "./providers/index.js";
+import { resolveUserModelCard } from "./providers/lookup.js";
 import type { InkosEndpoint } from "./providers/types.js";
 import { isApiKeyOptionalForEndpoint } from "../utils/llm-endpoint-auth.js";
 
@@ -67,6 +68,11 @@ export async function resolveServiceModel(
     );
   }
 
+  // bank + pi-ai registry 都 miss 时,查用户在 provider 配置里填的参数。
+  const userCard = (!endpointModel && !piModel?.contextWindow)
+    ? resolveUserModelCard(projectRoot, service, modelId)
+    : undefined;
+
   const model: Model<Api> = {
     id: modelId,
     name: piModel?.name ?? modelId,
@@ -76,8 +82,8 @@ export async function resolveServiceModel(
     reasoning: piModel?.reasoning ?? false,
     input: piModel?.input ?? ["text"] as ("text" | "image")[],
     cost: piModel?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: endpointModel?.contextWindowTokens ?? piModel?.contextWindow ?? 0,
-    maxTokens: endpointModel?.maxOutput ?? piModel?.maxTokens ?? 16384,
+    contextWindow: endpointModel?.contextWindowTokens ?? piModel?.contextWindow ?? userCard?.contextWindowTokens ?? 0,
+    maxTokens: endpointModel?.maxOutput ?? piModel?.maxTokens ?? userCard?.maxOutput ?? 16384,
     ...(compat ? { compat: compat as Model<Api>["compat"] } : {}),
   };
 

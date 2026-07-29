@@ -1735,7 +1735,7 @@ const modelListCache = new Map<string, { models: Array<{ id: string; name: strin
 
 interface ServiceModelOverrides {
   readonly disabled?: ReadonlyArray<string>;
-  readonly extra?: ReadonlyArray<{ readonly id: string; readonly name?: string }>;
+  readonly extra?: ReadonlyArray<{ readonly id: string; readonly name?: string; readonly contextWindowTokens?: number; readonly maxOutput?: number }>;
   readonly labels?: Readonly<Record<string, string>>;
 }
 
@@ -1893,7 +1893,12 @@ function applyModelOverrides(
   if (overrides.extra) {
     for (const e of overrides.extra) {
       if (!byId.has(e.id)) {
-        byId.set(e.id, { id: e.id, name: e.name ?? e.id });
+        byId.set(e.id, {
+          id: e.id,
+          name: e.name ?? e.id,
+          ...(e.contextWindowTokens ? { contextWindow: e.contextWindowTokens } : {}),
+          ...(e.maxOutput ? { maxOutput: e.maxOutput } : {}),
+        });
       }
     }
   }
@@ -1964,8 +1969,12 @@ function normalizeModelOverrides(raw: unknown): ServiceModelOverrides | undefine
     ? record.extra
         .filter((e): e is Record<string, unknown> => Boolean(e) && typeof e === "object" && typeof (e as { id?: unknown }).id === "string" && (e as { id: string }).id.length > 0)
         .map((e) => {
-          const obj = e as { id: string; name?: unknown };
-          return typeof obj.name === "string" && obj.name.length > 0 ? { id: obj.id, name: obj.name } : { id: obj.id };
+          const obj = e as { id: string; name?: unknown; contextWindowTokens?: unknown; maxOutput?: unknown };
+          const item: { id: string; name?: string; contextWindowTokens?: number; maxOutput?: number } = { id: obj.id };
+          if (typeof obj.name === "string" && obj.name.length > 0) item.name = obj.name;
+          if (typeof obj.contextWindowTokens === "number" && obj.contextWindowTokens > 0) item.contextWindowTokens = obj.contextWindowTokens;
+          if (typeof obj.maxOutput === "number" && obj.maxOutput > 0) item.maxOutput = obj.maxOutput;
+          return item;
         })
     : undefined;
   const labels = record.labels && typeof record.labels === "object"
@@ -2929,7 +2938,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       : sseSink;
     const logger = createLogger({ tag: "studio", sinks: [scopedSseSink, consoleSink] });
     return {
-      client: overrides?.client ?? createLLMClient(currentConfig.llm),
+      client: overrides?.client ?? createLLMClient(currentConfig.llm, root),
       model: overrides?.model ?? currentConfig.llm.model,
       projectRoot: root,
       defaultLLMConfig: currentConfig.llm,
@@ -4665,7 +4674,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     try {
       // Load config + create LLM client (pipeline created after model resolution)
       const config = await loadCurrentProjectConfig({ requireApiKey: false });
-      const client = createLLMClient(config.llm);
+      const client = createLLMClient(config.llm, root);
 
       const loadedBookSession = await loadBookSession(root, sessionId);
       if (!loadedBookSession) {
@@ -4885,7 +4894,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
             ...(configuredEntry?.apiFormat ? { apiFormat: configuredEntry.apiFormat } : {}),
             ...(configuredEntry?.stream !== undefined ? { stream: configuredEntry.stream } : {}),
             baseUrl: configuredEntry?.baseUrl ?? "",
-          } as any)
+          } as any, root)
         : client;
       // 确认式生产任务的 intent：写下一章的各种触发方式（quick-action 按钮、
       // free-text 明确写章命令、写作指令启发式）统一归一成 write_next，与其它
@@ -5394,7 +5403,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       const currentConfig = await loadCurrentProjectConfig();
       const { ContinuityAuditor } = await import("@actalk/inkos-core");
       const auditor = new ContinuityAuditor({
-        client: createLLMClient(currentConfig.llm),
+        client: createLLMClient(currentConfig.llm, root),
         model: currentConfig.llm.model,
         projectRoot: root,
         bookId: id,
@@ -6434,7 +6443,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     try {
       const currentConfig = await loadCurrentProjectConfig();
       const model = createLLMTranslationModel({
-        client: createLLMClient(currentConfig.llm),
+        client: createLLMClient(currentConfig.llm, root),
         model: currentConfig.llm.model,
         maxTokens: body.maxTokens,
       });
