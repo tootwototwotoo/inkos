@@ -195,6 +195,7 @@ export {
   type PlanningMaterials,
 } from "./utils/planning-materials.js";
 export {
+  applyGlobalProxy,
   buildProxyFetchInit,
   fetchWithProxy,
   resolveProxyUrl,

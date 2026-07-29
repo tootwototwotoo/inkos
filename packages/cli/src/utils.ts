@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { createLLMClient, StateManager, createLogger, createStderrSink, createJsonLineSink, resolveEffectiveLLMConfig, loadLLMEnvLayers, GLOBAL_CONFIG_DIR, GLOBAL_ENV_PATH, type EffectiveLLMConfigResult, type LLMConfigCliOverrides, type ProjectConfig, type PipelineConfig, type LogSink } from "@actalk/inkos-core";
+import { createLLMClient, StateManager, createLogger, createStderrSink, createJsonLineSink, resolveEffectiveLLMConfig, loadLLMEnvLayers, GLOBAL_CONFIG_DIR, GLOBAL_ENV_PATH, applyGlobalProxy, type EffectiveLLMConfigResult, type LLMConfigCliOverrides, type ProjectConfig, type PipelineConfig, type LogSink } from "@actalk/inkos-core";
 import { formatSqliteMemorySupportWarning } from "./runtime-requirements.js";
 
 export { GLOBAL_CONFIG_DIR, GLOBAL_ENV_PATH };
@@ -113,6 +113,10 @@ export function buildPipelineConfig(
     readonly logFile?: NodeJS.WritableStream;
   },
 ): PipelineConfig {
+  // CLI/daemon 启动时应用全局代理,使 pi-ai SDK 内部的 fetch 和封面生成的裸 fetch 都走代理。
+  // try-catch:代理应用失败不应阻断启动。
+  try { applyGlobalProxy(config.llm.proxyUrl); } catch { /* non-fatal */ }
+
   if (!extra?.quiet && !sqliteMemorySupportWarned) {
     const warning = formatSqliteMemorySupportWarning();
     if (warning) {

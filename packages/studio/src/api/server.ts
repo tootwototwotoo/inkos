@@ -37,6 +37,7 @@ import {
   getAllEndpoints,
   probeModelsFromUpstream,
   fetchWithProxy,
+  applyGlobalProxy,
   chatCompletion,
   buildExportArtifact,
   evaluateBookQuality,
@@ -3618,7 +3619,50 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     }
     syncTopLevelLlmMirror(llm);
     await saveRawConfig(root, config);
+    // 服务配置变更后重新应用代理(用户可能在 services/config 里改了 proxyUrl)。
+    // try-catch:代理应用失败不应阻断配置保存。
+    try {
+      const updatedLlm = config.llm as Record<string, unknown>;
+      applyGlobalProxy(typeof updatedLlm.proxyUrl === "string" ? updatedLlm.proxyUrl : undefined);
+    } catch { /* proxy apply failure is non-fatal */ }
     return c.json({ ok: true });
+  });
+
+  // === 全局代理配置 ===
+  app.get("/api/v1/proxy", async (c) => {
+    const config = await loadRawConfig(root).catch(() => ({}) as Record<string, unknown>);
+    const llm = (config.llm as Record<string, unknown> | undefined) ?? {};
+    return c.json({
+      proxyUrl: typeof llm.proxyUrl === "string" ? llm.proxyUrl : "",
+    });
+  });
+
+  app.put("/api/v1/proxy", async (c) => {
+    const body = await c.req.json<{ proxyUrl?: string }>().catch(() => ({}) as { proxyUrl?: string });
+    const trimmed = typeof body.proxyUrl === "string" ? body.proxyUrl.trim() : "";
+    // 校验:空值允许(清空代理),非空必须是 http/https URL。
+    if (trimmed) {
+      try {
+        const parsed = new URL(trimmed);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          return c.json({ error: "proxyUrl must be http or https" }, 400);
+        }
+      } catch {
+        return c.json({ error: "proxyUrl is not a valid URL" }, 400);
+      }
+    }
+    const config = await loadRawConfig(root);
+    config.llm = config.llm ?? {};
+    const llm = config.llm as Record<string, unknown>;
+    if (trimmed) {
+      llm.proxyUrl = trimmed;
+    } else {
+      delete llm.proxyUrl;
+    }
+    await saveRawConfig(root, config);
+    // 即时生效:更新全局 dispatcher。
+    try { applyGlobalProxy(trimmed || undefined); } catch { /* non-fatal */ }
+    return c.json({ ok: true, proxyUrl: trimmed || "" });
   });
 
   app.get("/api/v1/cover/config", async (c) => {
@@ -6626,6 +6670,10 @@ export async function startStudioServer(
   options?: { readonly staticDir?: string },
 ): Promise<void> {
   const config = await loadProjectConfig(root, { consumer: "studio", requireApiKey: false });
+
+  // 启动时应用全局代理,使 pi-ai SDK 内部的 fetch 和封面生成的裸 fetch 都走代理。
+  // try-catch:代理应用失败不应阻断服务器启动。
+  try { applyGlobalProxy(config.llm.proxyUrl); } catch { /* non-fatal */ }
 
   const app = createStudioServer(config, root);
 
