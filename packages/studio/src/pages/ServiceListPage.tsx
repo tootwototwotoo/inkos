@@ -236,6 +236,72 @@ function CoverConfigCard() {
   );
 }
 
+function ProxyConfigCard() {
+  const [proxyUrl, setProxyUrl] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchJson<{ proxyUrl?: string }>("/proxy")
+      .then((data) => { if (!cancelled) setProxyUrl(data.proxyUrl ?? ""); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaved(false);
+    try {
+      await fetchJson("/proxy", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proxyUrl: proxyUrl.trim() }),
+      });
+      setSaved(true);
+    } catch {
+      // 静默忽略
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="rounded-xl border border-border/50 bg-card/50 p-4 space-y-3">
+      <div>
+        <h2 className="text-sm font-medium text-foreground">{tr("代理配置", "Proxy")}</h2>
+        <p className="mt-1 text-xs text-muted-foreground/70">
+          {tr(
+            "配置 HTTP/HTTPS 代理后,所有 LLM 调用(模型请求和封面生成)都会通过代理发出。留空则不使用代理。",
+            "When configured, all LLM calls (model requests and cover generation) go through this HTTP/HTTPS proxy. Leave empty to disable.",
+          )}
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={proxyUrl}
+          onChange={(e) => { setProxyUrl(e.target.value); setSaved(false); }}
+          placeholder="http://127.0.0.1:7890"
+          className="flex-1 rounded-lg border border-border/60 bg-background px-3 py-2 text-sm font-mono"
+        />
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className="flex items-center gap-1 text-xs px-3 py-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-40 shrink-0"
+        >
+          {saving ? <Loader2 size={12} className="animate-spin" /> : null}
+          {tr("保存", "Save")}
+        </button>
+      </div>
+      {saved && (
+        <p className="text-xs text-emerald-500">{tr("已保存,即时生效", "Saved, effective immediately")}</p>
+      )}
+    </section>
+  );
+}
+
 export function ServiceListPage({ nav }: { nav: Nav }) {
   const services = useServiceStore((s) => s.services);
   const loading = useServiceStore((s) => s.servicesLoading);
@@ -329,6 +395,8 @@ export function ServiceListPage({ nav }: { nav: Nav }) {
       <ServiceConfigSourceCard onChange={() => { void refreshServices(); }} />
 
       <CoverConfigCard />
+
+      <ProxyConfigCard />
 
       <div className="relative">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/40" />

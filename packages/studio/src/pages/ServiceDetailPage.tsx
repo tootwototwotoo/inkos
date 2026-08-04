@@ -420,10 +420,6 @@ export function ServiceDetailPage({ serviceId, nav }: { serviceId: string; nav: 
   const [detectedConfig, setDetectedConfig] = useState<DetectedConfig | null>(null);
   const [verifiedProbe, setVerifiedProbe] = useState<VerifiedProbe | null>(null);
 
-  // -- Global proxy state --
-  const [proxyUrl, setProxyUrl] = useState("");
-  const [proxySaving, setProxySaving] = useState(false);
-
   // -- Unified connection status --
   const [status, setStatus] = useState<ConnectionStatus>({ state: "idle" });
 
@@ -445,30 +441,6 @@ export function ServiceDetailPage({ serviceId, nav }: { serviceId: string; nav: 
       .catch(() => {});
     return () => { cancelled = true; };
   }, [isCustom, persistedCustomName, serviceId]);
-
-  // 加载全局代理配置
-  useEffect(() => {
-    let cancelled = false;
-    void fetchJson<{ proxyUrl?: string }>("/proxy")
-      .then((data) => { if (!cancelled) setProxyUrl(data.proxyUrl ?? ""); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
-
-  const handleSaveProxy = async () => {
-    setProxySaving(true);
-    try {
-      await fetchJson("/proxy", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ proxyUrl: proxyUrl.trim() }),
-      });
-    } catch {
-      // 静默忽略保存失败
-    } finally {
-      setProxySaving(false);
-    }
-  };
 
   const resolvedCustomName = persistedCustomName || customName.trim() || "Custom";
   const effectiveServiceId = isCustom ? `custom:${resolvedCustomName}` : serviceId;
@@ -774,41 +746,6 @@ export function ServiceDetailPage({ serviceId, nav }: { serviceId: string; nav: 
                   onChange={(e) => setTemperature(e.target.value)} className="flex-1 accent-primary h-1" />
                 <input type="number" value={temperature} onChange={(e) => setTemperature(e.target.value)}
                   min="0" max="2" step="0.05" className="w-16 rounded-md border border-border/60 bg-background px-2 py-1 text-xs text-right font-mono" />
-              </div>
-            </Field>
-          </div>
-        </details>
-
-        {/* 全局代理配置 */}
-        <details className="group pt-2 border-t border-border/20">
-          <summary className="text-xs text-muted-foreground/60 cursor-pointer select-none hover:text-muted-foreground transition-colors py-2">
-            {tr("代理配置", "Proxy")}
-          </summary>
-          <div className="space-y-3 pt-2">
-            <p className="text-[11px] text-muted-foreground/50">
-              {tr(
-                "配置 HTTP/HTTPS 代理后,所有 LLM 调用(包括模型请求和封面生成)都会通过代理发出。留空则不使用代理。",
-                "When an HTTP/HTTPS proxy is configured, all LLM calls (including model requests and cover generation) go through the proxy. Leave empty to disable.",
-              )}
-            </p>
-            <Field label={tr("代理 URL", "Proxy URL")}>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={proxyUrl}
-                  onChange={(e) => setProxyUrl(e.target.value)}
-                  placeholder={tr("http://127.0.0.1:7890", "http://127.0.0.1:7890")}
-                  className="flex-1 rounded-lg border border-border/60 bg-background px-3 py-2 text-sm font-mono"
-                />
-                <button
-                  type="button"
-                  onClick={handleSaveProxy}
-                  disabled={proxySaving}
-                  className="flex items-center gap-1 text-xs px-3 py-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-40 shrink-0"
-                >
-                  {proxySaving ? <Loader2 size={12} className="animate-spin" /> : null}
-                  {tr("保存", "Save")}
-                </button>
               </div>
             </Field>
           </div>
