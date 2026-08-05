@@ -55,6 +55,7 @@ export const STUDIO_SSE_EVENTS = [
   "log",
   "llm:progress",
   "ping",
+  "short:deleted",
 ] as const;
 
 export function collectNewSSEMessages(

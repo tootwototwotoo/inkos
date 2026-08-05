@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useApi } from "../hooks/use-api";
+import { useApi, fetchJson } from "../hooks/use-api";
 import type { SSEMessage } from "../hooks/use-sse";
 import { applyBookCollectionEvent, shouldRefetchBookCollections, shouldRefetchDaemonStatus } from "../hooks/use-book-activity";
 import type { TFunction } from "../hooks/use-i18n";
@@ -124,6 +124,7 @@ export function Sidebar({ nav, activePage, sse, t }: {
   const [renameTarget, setRenameTarget] = useState<{ sessionId: string; currentTitle: string } | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<{ sessionId: string; title: string } | null>(null);
+  const [shortDeleteTarget, setShortDeleteTarget] = useState<{ storyId: string; title: string } | null>(null);
   const [expandedBooks, setExpandedBooks] = useState<Set<string>>(new Set());
   const [projectChatExpanded, setProjectChatExpanded] = useState(true);
   const [myBooksExpanded, setMyBooksExpanded] = useState(true);
@@ -315,6 +316,22 @@ export function Sidebar({ nav, activePage, sse, t }: {
     if (!deleteTarget) return;
     await deleteSession(deleteTarget.sessionId);
     setDeleteTarget(null);
+  };
+
+  const handleDeleteShortConfirm = async () => {
+    if (!shortDeleteTarget) return;
+    const { storyId } = shortDeleteTarget;
+    try {
+      await fetchJson(`/shorts/${encodeURIComponent(storyId)}`, { method: "DELETE" });
+    } catch {
+      // 静默忽略
+    }
+    setShortDeleteTarget(null);
+    void refetchShorts();
+    // 如果当前正在查看被删除的短篇,导航回首页
+    if (activePage === `short:${storyId}`) {
+      nav.toDashboard();
+    }
   };
 
   return (
@@ -512,6 +529,14 @@ export function Sidebar({ nav, activePage, sse, t }: {
                       {short.chapterCount != null && (
                         <span className="shrink-0 text-[11px] text-muted-foreground/50">{short.chapterCount}{tr("章", "ch")}</span>
                       )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShortDeleteTarget({ storyId: short.storyId, title: short.title })}
+                      className="opacity-0 group-hover/short:opacity-100 shrink-0 w-6 h-8 flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-destructive hover:bg-destructive/5 transition-all"
+                      title={tr("删除短篇", "Delete short")}
+                    >
+                      <Trash2 size={12} />
                     </button>
                   </div>
 
@@ -834,6 +859,20 @@ export function Sidebar({ nav, activePage, sse, t }: {
         variant="danger"
         onConfirm={() => void handleDeleteConfirm()}
         onCancel={() => setDeleteTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={shortDeleteTarget !== null}
+        title={tr("删除短篇", "Delete Short")}
+        message={tr(
+          `确认从列表中移除《${shortDeleteTarget?.title ?? ""}》？文件仍保留在磁盘上，可手动恢复。`,
+          `Remove "${shortDeleteTarget?.title ?? ""}" from the list? Files are kept on disk and can be restored manually.`,
+        )}
+        confirmLabel={tr("删除", "Delete")}
+        cancelLabel={tr("取消", "Cancel")}
+        variant="danger"
+        onConfirm={() => void handleDeleteShortConfirm()}
+        onCancel={() => setShortDeleteTarget(null)}
       />
     </aside>
   );

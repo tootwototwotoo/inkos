@@ -2995,6 +2995,17 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     return c.json({ short });
   });
 
+  // 软删除短篇:在 short-story.json 标记 deleted: true,从列表隐藏但文件保留。
+  app.delete("/api/v1/shorts/:id", async (c) => {
+    const id = c.req.param("id");
+    const ok = await state.deleteShort(id);
+    if (!ok) {
+      return c.json({ error: `Short fiction "${id}" not found` }, 404);
+    }
+    broadcast("short:deleted", { storyId: id });
+    return c.json({ ok: true, storyId: id });
+  });
+
   app.get("/api/v1/books/:id", async (c) => {
     const id = c.req.param("id");
     try {

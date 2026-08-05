@@ -489,6 +489,7 @@ export class StateManager {
           continue;
         }
         const meta = await this.readShortMeta(storyId);
+        if (meta.deleted) continue; // 软删除:从列表隐藏但文件保留
         shorts.push({
           storyId,
           title: meta.title ?? storyId,
@@ -504,6 +505,25 @@ export class StateManager {
     } catch {
       return [];
     }
+  }
+
+  /**
+   * 软删除短篇:在 short-story.json 中写入 deleted: true,使其从 listShorts() 列表中隐藏。
+   * 磁盘文件/目录不删除,可手动恢复(改回 deleted: false 或删除该字段)。
+   * 返回 true 表示成功标记,false 表示短篇不存在或元数据文件缺失。
+   */
+  async deleteShort(storyId: string): Promise<boolean> {
+    const jsonPath = join(this.shortsDir, storyId, "final", "short-story.json");
+    let parsed: Record<string, unknown>;
+    try {
+      const raw = await readFile(jsonPath, "utf-8");
+      parsed = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      return false;
+    }
+    parsed.deleted = true;
+    await writeFile(jsonPath, JSON.stringify(parsed, null, 2), "utf-8");
+    return true;
   }
 
   /**
@@ -578,15 +598,16 @@ export class StateManager {
 
   private async readShortMeta(
     storyId: string,
-  ): Promise<{ title: string | null; chapterCount: number | null; language: string | null; hasCover: boolean; createdAt: number | null }> {
+  ): Promise<{ title: string | null; chapterCount: number | null; language: string | null; hasCover: boolean; createdAt: number | null; deleted: boolean }> {
     const baseDir = join(this.shortsDir, storyId);
     const jsonPath = join(baseDir, "final", "short-story.json");
     let title: string | null = null;
     let chapterCount: number | null = null;
     let language: string | null = null;
+    let deleted = false;
     try {
       const raw = await readFile(jsonPath, "utf-8");
-      const parsed = JSON.parse(raw) as { storyTitle?: unknown; chapters?: unknown; language?: unknown };
+      const parsed = JSON.parse(raw) as { storyTitle?: unknown; chapters?: unknown; language?: unknown; deleted?: unknown };
       if (typeof parsed.storyTitle === "string" && parsed.storyTitle.trim()) {
         title = parsed.storyTitle.trim();
       }
@@ -595,6 +616,9 @@ export class StateManager {
       }
       if (typeof parsed.language === "string") {
         language = parsed.language;
+      }
+      if (typeof parsed.deleted === "boolean") {
+        deleted = parsed.deleted;
       }
     } catch {
       // short-story.json 缺失或解析失败,回退到目录名
@@ -618,7 +642,7 @@ export class StateManager {
     } catch {
       // 忽略
     }
-    return { title, chapterCount, language, hasCover, createdAt };
+    return { title, chapterCount, language, hasCover, createdAt, deleted };
   }
 
   async getNextChapterNumber(bookId: string): Promise<number> {
