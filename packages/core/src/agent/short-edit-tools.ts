@@ -14,6 +14,27 @@ import { safeChildPath } from "../utils/path-safety.js";
  * 编辑工具,供 short 继续编辑会话使用。
  */
 
+// Process-wide per-file async mutex. The agent runs tool calls in parallel by
+// default; when several edits land on the same file in one turn, naive
+// read-modify-write races would silently lose updates (last write wins) and
+// concurrent writeFile calls can trip Windows file locking (EPERM/EACCES).
+// This queue serializes calls per resolved file path so every edit applies
+// cleanly while edits to *different* files still run in parallel. Mirrors the
+// per-project mutex pattern in interactive-film/authoring-store.ts.
+const fileLocks = new Map<string, Promise<unknown>>();
+async function withFileLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = fileLocks.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  fileLocks.set(key, prev.then(() => gate));
+  await prev.catch(() => {}); // wait for predecessor; ignore its error for ordering
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}
+
 function textResult(text: string): AgentToolResult<undefined>;
 function textResult<T>(text: string, details: T): AgentToolResult<T>;
 function textResult<T = undefined>(text: string, details?: T): AgentToolResult<T> {
@@ -78,17 +99,21 @@ export function createEditShortFileTool(
           return textResult(`Only .md/.txt/.json files can be edited (got: ${params.filePath}).`);
         }
         const filePath = safeChildPath(shortRoot, params.filePath);
-        const content = await readFile(filePath, "utf-8");
-        const idx = content.indexOf(params.oldString);
-        if (idx === -1) {
-          return textResult(`oldString not found in "${params.filePath}".`);
-        }
-        if (content.indexOf(params.oldString, idx + 1) !== -1) {
-          return textResult(`oldString appears more than once in "${params.filePath}". Provide a more specific match.`);
-        }
-        const updated = content.slice(0, idx) + params.newString + content.slice(idx + params.oldString.length);
-        await writeFile(filePath, updated, "utf-8");
-        return textResult(`File "${params.filePath}" updated successfully.`);
+        // Serialize read-modify-write per file so parallel edits to the same
+        // chapter apply in order instead of racing (lost updates / file lock).
+        return await withFileLock(filePath, async () => {
+          const content = await readFile(filePath, "utf-8");
+          const idx = content.indexOf(params.oldString);
+          if (idx === -1) {
+            return textResult(`oldString not found in "${params.filePath}".`);
+          }
+          if (content.indexOf(params.oldString, idx + 1) !== -1) {
+            return textResult(`oldString appears more than once in "${params.filePath}". Provide a more specific match.`);
+          }
+          const updated = content.slice(0, idx) + params.newString + content.slice(idx + params.oldString.length);
+          await writeFile(filePath, updated, "utf-8");
+          return textResult(`File "${params.filePath}" updated successfully.`);
+        });
       } catch (err: any) {
         return textResult(`Failed to edit "${params.filePath}": ${err?.message ?? String(err)}`);
       }
@@ -124,9 +149,13 @@ export function createWriteShortFileTool(
           return textResult(`Only .md/.txt/.json files can be written (got: ${params.filePath}).`);
         }
         const filePath = safeChildPath(shortRoot, params.filePath);
-        await mkdir(dirname(filePath), { recursive: true });
-        await writeFile(filePath, params.content, "utf-8");
-        return textResult(`File "${params.filePath}" written successfully.`);
+        // Serialize writes per file so parallel full-file overwrites to the same
+        // chapter don't trip the OS file lock (EPERM/EACCES on Windows).
+        return await withFileLock(filePath, async () => {
+          await mkdir(dirname(filePath), { recursive: true });
+          await writeFile(filePath, params.content, "utf-8");
+          return textResult(`File "${params.filePath}" written successfully.`);
+        });
       } catch (err: any) {
         return textResult(`Failed to write "${params.filePath}": ${err?.message ?? String(err)}`);
       }
