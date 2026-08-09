@@ -242,6 +242,23 @@ function buildShortContinuePrompt(storyId: string, isZh: boolean): string {
 - 讨论性问题（不动文件）-> 直接回答。
 - 不要凭空生成新章节追加；短篇章节数固定，修改只针对已有章节。
 - 修改前先用 read_short_file 读取目标文件确认当前内容，避免 oldString 不匹配。
+- 用户要求审计/检查/审稿/看问题/找毛病 -> 走下面的「审计与自动修正」工作流，审计完直接修正，不要只报告问题就停下。
+
+## 审计与自动修正
+
+当用户要求审计、检查、审稿、看问题、找毛病时，不要只报告问题就停下——审计完成后必须自动修正发现的问题。
+
+工作流：
+1. 用 read_short_file 读取 final/full.md（或逐章读 final/chapters/NNNN.md），通读全文。
+2. 像真实编辑审稿，检查：时间线矛盾、人物关系不一致、证据/动机断裂、物理状态错误、节奏拖沓或跳跃、开篇抓人度、结尾回报是否到位、章节衔接断裂。把问题整理成简要清单（每条注明章节号和位置）。
+3. 逐条修正：对每个可定位的问题，用 read_short_file 读对应章节文件确认原文，然后用 edit_short_file（局部修改）或 write_short_file（整段重写）落地修正。多个问题涉及不同章节时可并行调用；涉及同一文件时按顺序逐个 edit_short_file，每个 edit 完基于最新内容再匹配下一个。
+4. 改完涉及正文的章节后，同步更新 final/full.md（如果只改了单章，用 edit_short_file 对 full.md 做同样的替换；如果整章重写，用 write_short_file 重建 full.md）。
+5. 最后简述：审计发现哪些问题、分别怎么修的、还有哪些需要用户自行定夺的（如有）。
+
+注意：
+- 审计意见不要写进 reviews/ 目录；那是生产阶段审稿记录，不要覆盖。
+- 如果问题需要用户做创作决策（如改动走向、增删情节线），先修能确定的技术性问题，再把需要决策的列出来问用户。
+- 不要因为审计就整篇重写——只改有问题的部分，保留写得好的内容。
 
 ${commonOutputRules(true)}`
     : `You are the InkOS short-fiction continue-editing assistant. This session is bound to short fiction "${storyId}" under shorts/${storyId}/.
@@ -279,6 +296,23 @@ ${commonOutputRules(true)}`
 - Discussion (no file change) -> answer directly.
 - Do not invent new chapters to append; the short has a fixed chapter count, edits target existing chapters only.
 - Read the target file first (read_short_file) before editing to avoid oldString mismatch.
+- User asks to audit/review/check/find problems -> follow the "Audit and auto-fix" workflow below; fix issues automatically after auditing, do not stop at just reporting.
+
+## Audit and auto-fix
+
+When the user asks to audit, review, check, or find problems with the short, do not stop after just reporting the issues - you must automatically fix the problems you find.
+
+Workflow:
+1. Read final/full.md with read_short_file (or read final/chapters/NNNN.md chapter by chapter) to review the full manuscript.
+2. Audit like a real editor: check timeline contradictions, relationship inconsistencies, broken evidence/motivation chains, physical-state errors, pacing (dragging or jumping), opening hook, ending payoff, and chapter-to-chapter continuity gaps. Compile a brief issue list (note the chapter number and location for each).
+3. Fix each issue: for every locatable problem, read the relevant chapter file with read_short_file to confirm the current text, then apply the fix with edit_short_file (local edit) or write_short_file (paragraph/section rewrite). Issues in different chapters may be fixed in parallel; issues in the same file must be applied sequentially - after each edit, match the next oldString against the updated content.
+4. After fixing chapters that touch the prose, sync final/full.md (if you patched a single chapter, apply the same edit_short_file to full.md; if you rewrote a whole chapter, rebuild full.md with write_short_file).
+5. End with a brief summary: what issues the audit found, how each was fixed, and any remaining items that need the user's creative decision (if any).
+
+Notes:
+- Do not write audit notes into the reviews/ directory; that holds production-stage review records - do not overwrite them.
+- If an issue requires a creative decision from the user (e.g., changing story direction, adding/removing plot threads), fix the technical problems you can resolve first, then list the decisions needed for the user.
+- Do not rewrite the whole story just because of an audit - only fix the parts with problems, keep the content that works well.
 
 ${commonOutputRules(false)}`;
 }
